@@ -56,11 +56,31 @@ p { margin: 0; }
   gap: 8px;
   padding-top: var(--gap);
   padding-bottom: var(--gap);
+  /* Stays at the top while you scroll, so the status and Stop are always in view. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
 }
 
 .app-name {
   margin: 0;
   font-size: 1.4rem;
+}
+
+.header-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Stop: only shown while the coach is talking. #121212 on #FF8A80 is 8.2:1. */
+.stop {
+  min-width: 96px;
+  background: var(--warning);
+  border-color: var(--warning);
+  color: var(--on-accent);
 }
 
 /* State is shown by an icon AND words, never by colour alone. */

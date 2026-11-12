@@ -9,8 +9,11 @@
 <body>
   <header class="app-header">
     <h1 class="app-name">Gym Coach</h1>
-    <!-- The icon comes from CSS (data-state); the words are always shown too. -->
-    <p id="status" class="status-pill" data-state="off">Hands-free off</p>
+    <div class="header-right">
+      <!-- The icon comes from CSS (data-state); the words are always shown too. -->
+      <p id="status" class="status-pill" data-state="off">Hands-free off</p>
+      <button id="stop" class="stop" aria-keyshortcuts="Escape" hidden>■ Stop</button>
+    </div>
   </header>
 
   <main>
@@ -71,6 +74,9 @@
       <div class="settings-body">
         <button id="wake-word" class="secondary" aria-pressed="false">Wake word: OFF</button>
         <button id="voice-on" class="secondary" aria-pressed="true">Voice: ON</button>
+        <button id="interrupt" class="secondary" aria-pressed="false"
+                aria-describedby="interrupt-note">Interrupt by voice: OFF</button>
+        <p id="interrupt-note" class="small muted">Works best with headphones.</p>
         <label for="voice" class="label">Coach's voice</label>
         <select id="voice"><option value="">Browser default</option></select>
         <button id="reset" class="secondary">New session</button>

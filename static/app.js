@@ -46,6 +46,11 @@ const voiceOn = toggle("voice-on", "Voice", "voice", true, (on) => {
   updateStatus();
 });
 
+// Interrupt by voice ON: with hands-free on, the mic keeps listening while the
+// coach talks, so you can talk over it. Off by default: without headphones the
+// mic hears the coach's own voice.
+const interruptOn = toggle("interrupt", "Interrupt by voice", "interrupt", false, () => {});
+
 // Follow-up window: when the coach asks a question ("How many reps did you
 // get?"), people just answer ("eight") without saying "coach" first. So for
 // 8 seconds after a question (once it has been spoken, or as soon as it is
@@ -188,9 +193,12 @@ function speak(text) {
   utterance.voice = voice;
   utterance.lang = voice ? voice.lang : "en-GB";
   speaking = utterance;
-  if (handsFreeOn) handsFree.abort();
+  if (handsFreeOn && !interruptOn()) handsFree.abort();
+  // Runs once when the reply ends, fails, or is stopped early (stopSpeaking).
+  // The first line makes any later event from the same reply do nothing,
+  // so the mic is never restarted twice.
   utterance.onend = utterance.onerror = () => {
-    if (speaking !== utterance) return; // an older reply we cancelled: ignore
+    if (speaking !== utterance) return; // already finished, or an older reply
     speaking = null;
     if (isQuestion) openFollowUp();     // the window starts once it has finished asking
     startListening();
@@ -236,7 +244,31 @@ if (window.speechSynthesis) {
   $("voice").addEventListener("change", () => settings.save("voiceName", $("voice").value));
 }
 
+// Stop the coach mid-sentence (Stop button, Esc, or talking over it). It does
+// the same tidy-up as a normal ending, so a question still opens the
+// follow-up window and hands-free listening restarts straight away.
+function stopSpeaking() {
+  if (!speaking) return;
+  const finish = speaking.onend;
+  speechSynthesis.cancel();
+  finish(); // the cancel's own event comes later and is ignored
+}
+
+// Echo filter: the mic can pick up the coach's own voice. If 60% or more of
+// the words heard are in the sentence being spoken, it's an echo, not you.
+const words = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").split(/\s+/).filter(Boolean);
+function isEcho(heard, spoken) {
+  const spokenWords = new Set(words(spoken));
+  const heardWords = words(heard);
+  const inSpoken = heardWords.filter((w) => spokenWords.has(w)).length;
+  return heardWords.length > 0 && inSpoken / heardWords.length >= 0.6;
+}
+
 function updateStatus() {
+  if ($("stop").hidden === Boolean(speaking)) {   // the Stop button only shows while the coach talks
+    $("stop").hidden = !speaking;
+    console.log(speaking ? "[stop] shown" : "[stop] hidden");
+  }
   // data-state lets the CSS show the matching icon next to the words.
   $("status").dataset.state = speaking ? "speaking" : handsFreeOn ? "listening" : "off";
   $("status").textContent = speaking ? "Coach speaking..."
@@ -244,9 +276,10 @@ function updateStatus() {
     : answerWindowOpen() ? "Listening for your answer..." : "Listening...";
 }
 
-// (Re)start hands-free listening, unless it's switched off or the coach is talking.
+// (Re)start hands-free listening, unless it's switched off or the coach is
+// talking (and interrupting by voice is off).
 function startListening() {
-  if (!handsFreeOn || speaking) return;
+  if (!handsFreeOn || (speaking && !interruptOn())) return;
   try { handsFree.start(); } catch (e) { /* already running: fine */ }
 }
 
@@ -311,10 +344,19 @@ if (Recognition) {
       console.log("[hands-free] ignored: empty");
       return;
     }
+    // Heard while the coach is talking (only with "Interrupt by voice" on).
+    if (speaking && isEcho(text, speaking.text)) {
+      console.log("[barge-in] ignored echo");
+      return;
+    }
     if (wakeWordOn() && !match && !answerWindowOpen()) {
       console.log("[hands-free] ignored: no wake word, window closed");
       $("heard").textContent = "Ignored (no wake word): " + text;
       return;
+    }
+    if (speaking) {
+      console.log("[barge-in] interrupted");
+      stopSpeaking();
     }
     console.log(`[hands-free] accepted: ${match ? "wake word"
       : wakeWordOn() ? "inside follow-up window" : "wake word off"}`);
@@ -349,6 +391,12 @@ if (Recognition) {
   $("talk").disabled = true;
   $("unsupported").hidden = false;
 }
+
+// Stop the coach talking: the Stop button or the Esc key.
+$("stop").addEventListener("click", stopSpeaking);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") stopSpeaking();
+});
 
 // Typed fallback.
 $("text-form").addEventListener("submit", (event) => {
