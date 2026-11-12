@@ -7,43 +7,72 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <header class="app-header">
+    <h1 class="app-name">Gym Coach</h1>
+    <!-- The icon comes from CSS (data-state); the words are always shown too. -->
+    <p id="status" class="status-pill" data-state="off">Hands-free off</p>
+  </header>
+
   <main>
-    <p id="hint" class="status">Say: Coach, what workout should I do?</p>
-    <p id="week" hidden><span class="label">Your week:</span> <span id="week-days"></span></p>
-    <p id="today" hidden><span class="label">Today:</span> <span id="today-name"></span></p>
+    <!-- 1. What to do now -->
+    <section class="card workout" aria-labelledby="current">
+      <p id="today" class="label" hidden>Today: <span id="today-name"></span></p>
+      <h2 id="current" class="exercise">No routine yet.</h2>
+      <div id="figures" class="figures" hidden>
+        <p id="set-figure" class="figure"></p>
+        <p id="load-figure" class="figure"></p>
+      </div>
+    </section>
+    <p class="hint-chip">Try saying: <span id="hint">Coach, what workout should I do?</span></p>
 
-    <p class="label">Current exercise</p>
-    <h1 id="current">Tap to talk to begin</h1>
-
-    <button id="talk" class="talk">Tap to talk</button>
-    <button id="hands-free" class="secondary" aria-pressed="false" disabled>Hands-free: OFF</button>
-    <p id="status" class="status">Hands-free off</p>
-    <div class="settings">
-      <button id="wake-word" class="secondary" aria-pressed="false">Wake word: OFF</button>
-      <button id="voice-on" class="secondary" aria-pressed="true">Voice: ON</button>
-      <label for="voice" class="label">Coach's voice</label>
-      <select id="voice"><option value="">Browser default</option></select>
+    <!-- 2. Talking to the coach -->
+    <div class="controls">
+      <button id="hands-free" class="primary" aria-pressed="false" disabled>Hands-free: OFF</button>
+      <button id="talk" class="secondary">Tap to talk</button>
+      <p id="unsupported" class="warning" hidden>
+        Voice input isn't supported in this browser. Please use Chrome or Edge,
+        or type below.
+      </p>
     </div>
-    <p id="unsupported" class="warning" hidden>
-      Voice input isn't supported in this browser. Please use Chrome or Edge,
-      or type below.
-    </p>
 
-    <section class="conversation">
-      <p><span class="label">You said:</span> <span id="heard">...</span></p>
-      <p><span class="label">Understood by:</span> <span id="source">...</span></p>
-      <p><span class="label">Coach:</span> <span id="reply">...</span></p>
+    <section class="card conversation" aria-label="Conversation">
+      <p class="label">You said</p>
+      <p id="heard" class="said">...</p>
+      <p class="label">Coach</p>
+      <p id="reply" class="said" aria-live="polite">...</p>
+      <p class="small muted">Understood by: <span id="source">...</span></p>
+
+      <form id="text-form">
+        <label for="text" class="label">Type instead</label>
+        <div class="row">
+          <input id="text" type="text" placeholder="e.g. 60 kilos, 8 reps" autocomplete="off">
+          <button type="submit" class="secondary">Send</button>
+        </div>
+      </form>
     </section>
 
-    <form id="text-form">
-      <input id="text" type="text" placeholder="e.g. 60 kilos, 8 reps" autocomplete="off">
-      <button type="submit">Send</button>
-    </form>
+    <!-- 3. The week and what's been done -->
+    <section id="week" aria-labelledby="week-heading" hidden>
+      <h2 id="week-heading" class="section-heading">Your week</h2>
+      <ul id="week-days" class="chips"></ul>
+    </section>
 
-    <h2>Session log</h2>
-    <table id="log"></table>
+    <section aria-labelledby="log-heading">
+      <h2 id="log-heading" class="section-heading">Session log</h2>
+      <div class="table-wrap"><table id="log"></table></div>
+    </section>
 
-    <button id="reset" class="secondary">New session</button>
+    <!-- 4. Less-used settings, folded away -->
+    <details class="card settings">
+      <summary>Settings</summary>
+      <div class="settings-body">
+        <button id="wake-word" class="secondary" aria-pressed="false">Wake word: OFF</button>
+        <button id="voice-on" class="secondary" aria-pressed="true">Voice: ON</button>
+        <label for="voice" class="label">Coach's voice</label>
+        <select id="voice"><option value="">Browser default</option></select>
+        <button id="reset" class="secondary">New session</button>
+      </div>
+    </details>
   </main>
   <script src="/static/app.js"></script>
 </body>

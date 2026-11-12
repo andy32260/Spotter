@@ -94,17 +94,40 @@ async function sendText(text, fromHandsFree = false) {
 }
 
 function showState(data) {
-  $("current").textContent = data.current;
+  // The coach describes the set as one sentence ("Bench Press, set 1 of 3:
+  // 40 kilos for 10 reps."). Show its parts as separate figures; any other
+  // sentence ("No routine yet.", "That's the workout done...") is shown as it is.
+  const set = data.current.match(/^(.+), set (\d+) of (\d+): ([\d.]+) kilos for (\d+) reps\.$/);
+  $("current").textContent = set ? set[1] : data.current;
+  $("figures").hidden = !set;
+  if (set) {
+    $("set-figure").textContent = `Set ${set[2]} of ${set[3]}`;
+    $("load-figure").textContent = `${set[4]} kg × ${set[5]} reps`;
+  }
   renderLog(data.log);
   // The week appears once a routine is loaded; until then, a hint to set one up.
   const loaded = Boolean(data.week);
   $("week").hidden = $("today").hidden = !loaded;
   if (loaded) {
-    $("week-days").textContent = data.week.join(", ");
+    renderWeek(data.week, data.today);
     $("today-name").textContent = data.today;
   }
-  $("hint").textContent = loaded ? "Say: Coach, what's first?"
-    : "Say: Coach, what workout should I do?";
+  $("hint").textContent = loaded ? "Coach, what's first?"
+    : "Coach, what workout should I do?";
+}
+
+// The week as chips; today's chip is marked for screen readers too.
+function renderWeek(days, today) {
+  const todayIndex = days.indexOf(today);   // today is day 1, the first match
+  $("week-days").replaceChildren(...days.map((name, i) => {
+    const chip = document.createElement("li");
+    chip.textContent = name;
+    if (i === todayIndex) {
+      chip.className = "today";
+      chip.setAttribute("aria-current", "true");
+    }
+    return chip;
+  }));
 }
 
 // The coach must never hear itself: stop listening while it talks,
@@ -171,6 +194,8 @@ if (window.speechSynthesis) {
 }
 
 function updateStatus() {
+  // data-state lets the CSS show the matching icon next to the words.
+  $("status").dataset.state = speaking ? "speaking" : handsFreeOn ? "listening" : "off";
   $("status").textContent = speaking ? "Coach speaking..."
     : !handsFreeOn ? "Hands-free off"
     : answerWindowOpen() ? "Listening for your answer..." : "Listening...";
@@ -198,6 +223,7 @@ function renderLog(log) {
   const header = table.insertRow();
   LOG_COLUMNS.forEach(([heading]) => {
     const th = document.createElement("th");
+    th.scope = "col";
     th.textContent = heading;
     header.appendChild(th);
   });
