@@ -213,7 +213,7 @@ class Session:
         self.index = 0          # which exercise we are on
         self.set_number = 1     # which set of that exercise
         self.log = []           # everything that happened, shown on screen
-        self.snapshot = None    # the state just before the last logged set
+        self.snapshot = None    # the state just before the last action, for "undo"
         self.rest_seconds = 0   # rest to take after this turn (0 = none)
         self.details = None     # on-screen summary lines, sent when the workout ends
 
@@ -303,7 +303,7 @@ class Session:
             weight = ex["weight"]   # assume they used the planned weight
 
         # Save the state before changing anything, so "undo" can restore it.
-        self.snapshot = self.save_state()
+        self.save_state("the last set")
         # Epley sets the next weight; with no reps said, keep the same weight.
         new_weight = weight if effort_only else next_weight(weight, reps, ex["reps"])
         # Effort only nudges it, and only when the target reps were hit.
@@ -346,6 +346,7 @@ class Session:
 
     def pain(self):
         ex = self.current()
+        self.save_state(f"stopping {ex['name']} for pain")
         self.log.append({"exercise": ex["name"], "set": self.set_number,
                          "note": "stopped: pain"})
         self.move_to_next_exercise()
@@ -357,6 +358,7 @@ class Session:
 
     def equipment_taken(self):
         ex = self.current()
+        self.save_state("the swap" if "alternative" in ex else f"skipping {ex['name']}")
         alt = ex.pop("alternative", None)   # pop: each alternative used once
         if alt is None:
             self.move_to_next_exercise()
@@ -375,6 +377,7 @@ class Session:
             days = 6
             note = ("Seven days leaves no rest day, and beginners need recovery, "
                     "so I've set you up on 6. ")
+        self.save_state("the routine setup")
         self.awaiting = None
         self.routine = ROUTINES[days]
         self.today = self.routine[0]    # today is day 1 of the week
@@ -464,11 +467,12 @@ class Session:
         ex = self.current()
         planned = ex["weight"]
         if intent == "skip":
+            self.save_state("skipping the warm-up")
             ex["calibrated"], self.awaiting = True, None
             return f"Got it. Working sets at {planned:g} kilos. " + self.describe_current()
         if effort is None:
             return ASK_EFFORT
-        self.snapshot = self.save_state()           # so "undo" can take it back
+        self.save_state("the warm-up")
         weight = {"easy": planned,                  # it was easy: the plan is fine
                   "right": round_down(planned * 0.75),
                   "hard": warm_up_weight(planned)}[effort]
@@ -477,26 +481,31 @@ class Session:
         self.awaiting = None
         return f"Got it. Working sets at {weight:g} kilos. " + self.describe_current()
 
-    def save_state(self):
-        """Everything "undo" needs to put back."""
-        return (copy.deepcopy(self.plan), self.index, self.set_number,
-                len(self.log), self.awaiting)
+    def save_state(self, action):
+        """Called just before every change: remember the state, and what the
+        action was, so "undo" can put back exactly that one action."""
+        self.snapshot = (action, copy.deepcopy(self.plan), self.index, self.set_number,
+                         len(self.log), self.awaiting, self.routine, self.today)
 
     def undo(self, weight, reps):
         if self.snapshot is None:
             return "There's nothing to undo."
-        self.plan, self.index, self.set_number, log_length, self.awaiting = self.snapshot
-        self.snapshot = None              # one undo per set: a second undo has nothing left
-        del self.log[log_length:]         # remove entries added since the snapshot
-        if self.awaiting == "effort":     # undid a warm-up: ask about it again
-            return "Undone. " + ASK_EFFORT
-        if reps is not None:              # "no, it was 60 for 8": log the fix
+        (action, self.plan, self.index, self.set_number, log_length,
+         self.awaiting, self.routine, self.today) = self.snapshot
+        self.snapshot = None              # one level of undo: a second has nothing left
+        del self.log[log_length:]         # remove what that action logged
+        undone = f"Undone {action}. "
+        if self.routine is None:          # undid the routine setup: ask again
+            return undone + ASK_DAYS
+        if self.awaiting == "effort":     # undid a warm-up answer: ask again
+            return undone + ASK_EFFORT
+        if reps is not None and action == "the last set":   # "no, it was 60 for 8"
             reply = self.set_done(weight, reps)
             if self.rest_seconds:         # a correction never starts a rest
                 reply = reply.removesuffix(self.rest_reply)
                 self.rest_seconds = 0
-            return "Undone. " + reply
-        return "Undone. " + self.describe_current()
+            return undone + reply
+        return undone + self.describe_current()
 
 
 # ---------- Typed test mode (no voice, no AI yet) ----------

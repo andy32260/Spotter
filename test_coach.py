@@ -52,7 +52,6 @@ def test_plausibility_check():
 
 def test_undo():
     s = upper_day()
-    assert s.handle("undo") == "There's nothing to undo."
     weight_before = s.current()["weight"]
 
     s.handle("set_done", weight=64, reps=8)
@@ -316,7 +315,7 @@ def test_pain_during_warm_up():
 
 def test_undo_a_warm_up():
     s = warmed_up("hard")
-    assert s.handle("undo") == "Undone. How did it feel: easy, about right or hard?"
+    assert s.handle("undo") == "Undone the warm-up. How did it feel: easy, about right or hard?"
     assert s.log == [] and s.awaiting == "effort" and s.current()["weight"] == 40
     s.handle("effort", effort="easy")
     assert s.current()["weight"] == 40
@@ -357,6 +356,41 @@ def test_no_nudge_when_target_missed():
     reply = s.handle("set_done", weight=40, reps=7, effort="easy")
     assert s.current()["weight"] == next_weight(40, 7, 10)   # the normal Epley drop
     assert "Felt" not in reply
+
+
+def test_undo_only_the_swap():
+    s = upper_day()
+    s.handle("set_done", weight=40, reps=10)
+    s.handle("equipment_taken")                     # Bench Press -> Seated Chest Press
+    reply = s.handle("undo")
+    assert reply == "Undone the swap. Bench Press, set 2 of 3: 40 kilos for 10 reps."
+    assert s.current()["name"] == "Bench Press"     # the original exercise is back
+    assert s.log == [{"exercise": "Bench Press", "set": 1, "weight": 40, "reps": 10}]
+    assert s.handle("undo") == "There's nothing to undo."
+
+
+def test_undo_only_the_last_set():
+    s = upper_day()
+    s.handle("set_done", weight=40, reps=10)
+    assert s.handle("undo").startswith("Undone the last set. Bench Press, set 1 of 3")
+    assert s.log == []
+    assert s.handle("undo") == "There's nothing to undo."
+
+
+def test_undo_a_pain_stop():
+    s = upper_day()
+    s.handle("pain")
+    assert s.handle("undo").startswith("Undone stopping Bench Press for pain.")
+    assert s.current()["name"] == "Bench Press" and s.log == []
+
+
+def test_undo_the_routine_setup():
+    s = upper_day()
+    assert s.handle("undo") == ("Undone the routine setup. "
+                                "How many days a week will you be training?")
+    assert s.routine is None and s.awaiting == "days"
+    s.handle("set_done", reps=3)                    # answer again: 3 days
+    assert s.routine == ["Upper", "Lower", "Full Body"]
 
 
 def test_barbell_plates():
