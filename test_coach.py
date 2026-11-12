@@ -152,9 +152,14 @@ def test_full_body_workout_can_be_completed():
     assert s.handle("next").startswith("Squat, set 1 of 3")
     for _ in range(9):                           # 3 exercises x 3 sets
         reply = s.handle("set_done", reps=10)
-    assert reply.endswith("That's the workout done. Nice work.")
+    assert reply == ("Workout done. You logged 9 sets across 3 exercises. "
+                     "Next session: Full Body.")      # 1-day routine repeats
     assert [entry["exercise"] for entry in s.log] == (
         ["Squat"] * 3 + ["Bench Press"] * 3 + ["Seated Cable Row"] * 3)
+    assert s.details == ["Squat: 3 sets, best 40 kg x 10",
+                         "Bench Press: 3 sets, best 40 kg x 10",
+                         "Seated Cable Row: 3 sets, best 35 kg x 10"]
+    assert s.rest_seconds == 0
 
 
 def test_rest_after_a_set():
@@ -216,6 +221,47 @@ def test_form_before_routine_changes_nothing():
     s = Session()
     assert s.handle("form") == "Say 'what workout should I do?' to set up your routine."
     assert s.routine is None and s.awaiting is None
+
+
+def test_three_day_summary_names_the_next_day():
+    s = upper_day_of(3)
+    for _ in range(9):
+        reply = s.handle("set_done", reps=10)
+    assert "Workout done" in reply and "Next session: Lower." in reply
+
+
+def test_workout_ending_with_pain():
+    s = upper_day_of(1)                          # Full Body
+    for _ in range(6):                           # Squat and Bench Press
+        s.handle("set_done", reps=10)
+    reply = s.handle("pain")                     # stop the last exercise
+    assert "You stopped Seated Cable Row because of pain" in reply
+    assert "Seated Cable Row: 0 sets (stopped: pain)" in s.details
+
+
+def test_mid_workout_summary():
+    s = upper_day_of(1)
+    s.handle("set_done", reps=10)
+    reply = s.handle("summary")
+    assert reply == ("So far: 1 set across 1 exercise. "
+                     "Next up: Squat, set 2 of 3: 40 kilos for 10 reps.")
+    assert s.details is None                     # no summary card yet
+
+
+def test_best_set_is_the_heaviest():
+    s = upper_day_of(1)
+    s.handle("set_done", weight=40, reps=10)
+    s.handle("set_done", weight=50, reps=6)
+    s.handle("set_done", weight=45, reps=10)
+    _, details = s.summary()
+    assert details[0] == "Squat: 3 sets, best 50 kg x 6"
+
+
+def upper_day_of(days):
+    """A session set up for the given days a week (today is day 1)."""
+    s = Session()
+    s.handle("overview", days=days)
+    return s
 
 
 if __name__ == "__main__":

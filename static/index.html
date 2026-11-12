@@ -29,8 +29,7 @@
       <p id="rest" class="rest" hidden></p>
       <p id="rest-done" class="rest-done" aria-live="polite"></p>
     </section>
-    <p class="hint-chip">Try saying: <span id="hint">Coach, what workout should I do?</span>
-      <span id="hint-form" class="hint-extra" hidden>Ask: how do I do this?</span></p>
+    <p class="hint-chip"><span id="hint">Say: what workout should I do?</span></p>
 
     <!-- 2. Talking to the coach -->
     <div class="controls">
@@ -62,6 +61,12 @@
     <section id="week" aria-labelledby="week-heading" hidden>
       <h2 id="week-heading" class="section-heading">Your week</h2>
       <ul id="week-days" class="chips"></ul>
+    </section>
+
+    <!-- Shown when the workout ends; stays until New session. -->
+    <section id="summary-card" class="card" aria-labelledby="summary-heading" hidden>
+      <h2 id="summary-heading" class="section-heading">Workout summary</h2>
+      <ul id="summary-list" class="summary-list"></ul>
     </section>
 
     <section aria-labelledby="log-heading">

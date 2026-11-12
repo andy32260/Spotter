@@ -182,7 +182,6 @@ p { margin: 0; }
 }
 
 .hint-chip span { color: var(--text); }
-.hint-chip .hint-extra { display: block; }   /* its own line under the main hint */
 
 /* ---------- Buttons and inputs ---------- */
 button,
@@ -308,6 +307,16 @@ input::placeholder { color: var(--muted); }
 .chips li.today {
   border: 3px solid var(--accent);
   font-weight: 700;
+}
+
+/* ---------- Workout summary ---------- */
+.summary-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.summary-list li + li {
+  margin-top: 6px;
 }
 
 /* ---------- Session log ---------- */

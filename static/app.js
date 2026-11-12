@@ -35,7 +35,10 @@ function toggle(id, label, key, defaultOn, onChange) {
 
 // Wake word OFF (default): hands-free acts on everything you say.
 // Wake word ON: only on "coach ..." / "hey coach ...", plus the follow-up window.
-const wakeWordOn = toggle("wake-word", "Wake word", "wakeWord", false, updateStatus);
+const wakeWordOn = toggle("wake-word", "Wake word", "wakeWord", false, () => {
+  updateStatus();
+  updateHint();   // add or drop "Coach," in the hint
+});
 
 // Voice OFF: replies are shown as text only, never spoken.
 const voiceOn = toggle("voice-on", "Voice", "voice", true, (on) => {
@@ -94,6 +97,7 @@ async function sendText(text, fromHandsFree = false) {
   }
   cancelRest();                                  // any real turn stops the timer
   if (data.rest_seconds > 0) startRest(data.rest_seconds);
+  if (data.summary) showSummary(data.summary);   // the workout just ended
   $("source").textContent = data.heard.source === "ai" ? "AI (Groq)" : "Regex rules";
   $("reply").textContent = data.reply;
   showState(data);
@@ -160,9 +164,31 @@ function showState(data) {
     renderWeek(data.week, data.today);
     $("today-name").textContent = data.today;
   }
-  $("hint").textContent = loaded ? "Coach, what's first?"
-    : "Coach, what workout should I do?";
-  $("hint-form").hidden = !loaded;   // once today's workout is set up
+  hintStage = !loaded ? "setup" : set ? "workout" : "finished";
+  updateHint();
+}
+
+// The hint under the workout card: what to say at this stage.
+const HINTS = {
+  setup: "what workout should I do?",
+  workout: "what's first / how do I do this? / 40 kilos, 10 reps",
+  finished: "how did I do? or start a new session in Settings",
+};
+let hintStage = "setup";
+
+// Only mention "Coach," when the wake word is actually needed.
+function updateHint() {
+  $("hint").textContent = "Say: " + (wakeWordOn() ? "Coach, " : "") + HINTS[hintStage];
+}
+
+// The end-of-workout summary: one list item per line from the coach.
+function showSummary(lines) {
+  $("summary-list").replaceChildren(...lines.map((line) => {
+    const item = document.createElement("li");
+    item.textContent = line;
+    return item;
+  }));
+  $("summary-card").hidden = false;
 }
 
 // The week as chips; today's chip is marked for screen readers too.
@@ -393,6 +419,8 @@ if (Recognition) {
   $("unsupported").hidden = false;
 }
 
+updateHint();   // the saved wake word setting decides the first hint
+
 // Stop the coach talking: the Stop button or the Esc key.
 $("stop").addEventListener("click", stopSpeaking);
 document.addEventListener("keydown", (event) => {
@@ -410,6 +438,8 @@ $("text-form").addEventListener("submit", (event) => {
 $("reset").addEventListener("click", async () => {
   const data = await (await fetch("/api/reset", { method: "POST" })).json();
   cancelRest();
+  $("summary-card").hidden = true;   // the summary stays until a new session
+  $("summary-list").replaceChildren();
   $("heard").textContent = "...";
   $("source").textContent = "...";
   $("reply").textContent = "...";

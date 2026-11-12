@@ -11,7 +11,7 @@ import re
 from groq import Groq
 
 INTENTS = ["next", "set_done", "pain", "equipment_taken", "undo", "overview",
-           "form", "unknown"]
+           "form", "summary", "unknown"]
 PAIN_WORDS = [
     "hurt", "pain", "sore", "twinge", "injur", "killing", "ache", "aching",
     "tweak", "tweaked", "pulled", "strain", "agony", "can't move",
@@ -27,6 +27,7 @@ NUMBER_WORDS = [
 INTENT_WORDS = [
     ("pain", PAIN_WORDS),
     ("undo", ["undo", "wrong", "scratch that", "not right", "didn't say"]),
+    ("summary", ["how did i do", "summary", "recap", "how am i doing"]),
     ("form", ["how do i", "how should i", "form", "technique", "tips", "cues"]),
     ("overview", ["what workout", "what exercises", "routine", "plan"]),
     ("equipment_taken", ["taken", "busy", "in use", "occupied", "someone on"]),
@@ -39,8 +40,9 @@ NUMBER_WITH_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(kgs?|kilos?|reps?|days?)?\b")
 
 LLM_INSTRUCTION = """You read what a beginner says to their gym coach.
 Return JSON with "intent", "weight" (kg), "reps" and "days" (days a week).
-intent is one of: next, set_done, pain, equipment_taken, undo, overview, form, unknown.
+intent is one of: next, set_done, pain, equipment_taken, undo, overview, form, summary, unknown.
 Use form when the user asks how to do the exercise or for technique tips.
+Use summary when the user asks how their workout is going or for a recap.
 Use overview when the user asks what workout or exercises they should do,
 or says how many days a week they can train.
 Use undo when the user says the last set was recorded wrong; include the
@@ -56,6 +58,7 @@ Examples:
 "what workout should I do" -> {"intent": "overview", "weight": null, "reps": null, "days": null}
 "how am I meant to do this" -> {"intent": "form", "weight": null, "reps": null, "days": null}
 "any tips for this one" -> {"intent": "form", "weight": null, "reps": null, "days": null}
+"how's my workout going" -> {"intent": "summary", "weight": null, "reps": null, "days": null}
 "I can train three days a week" -> {"intent": "overview", "weight": null, "reps": null, "days": 3}
 "no that's wrong, it was 60 kilos 8 reps" -> {"intent": "undo", "weight": 60, "reps": 8, "days": null}"""
 

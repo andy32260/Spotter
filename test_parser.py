@@ -84,6 +84,11 @@ def test_form():
     assert parser.parse_regex("how do I do this, it hurts")["intent"] == "pain"
 
 
+def test_summary():
+    assert parser.parse_regex("how did I do")["intent"] == "summary"
+    assert parser.parse_regex("give me a recap")["intent"] == "summary"
+
+
 def test_pain_wins_over_undo():
     check("that was wrong it hurt", "pain")
 

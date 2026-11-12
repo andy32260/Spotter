@@ -38,7 +38,7 @@ def turn():
     reply = session.handle(heard["intent"], heard["weight"], heard["reps"],
                            heard["days"])
     return jsonify(heard=heard, reply=reply, rest_seconds=session.rest_seconds,
-                   **state())
+                   summary=session.details, **state())
 
 
 @app.post("/api/reset")

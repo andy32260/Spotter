@@ -107,6 +107,11 @@ FORM_CUES = {
 ASK_DAYS = "How many days a week will you be training?"
 
 
+def plural(count, word):
+    """plural(1, 'set') -> '1 set', plural(3, 'set') -> '3 sets'."""
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
 def and_list(items):
     """['A', 'B', 'C'] -> 'A, B and C'."""
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
@@ -149,6 +154,7 @@ class Session:
         self.log = []           # everything that happened, shown on screen
         self.snapshot = None    # the state just before the last logged set
         self.rest_seconds = 0   # rest to take after this turn (0 = none)
+        self.details = None     # on-screen summary lines, sent when the workout ends
 
     def current(self):
         if self.index < len(self.plan):
@@ -171,6 +177,7 @@ class Session:
     # One function per intent. handle() picks which one to run.
     def handle(self, intent, weight=None, reps=None, days=None):
         self.rest_seconds = 0   # only a successfully logged set starts a rest
+        self.details = None
         # Safety first: pain is handled in every state, even during setup.
         if intent == "pain":
             if self.routine is None:
@@ -194,6 +201,8 @@ class Session:
             return "Say 'what workout should I do?' to set up your routine."
         if intent == "undo":    # before the "done" check, so the last set can be undone
             return self.undo(weight, reps)
+        if intent == "summary":     # also works after the workout is finished
+            return self.progress()
         if intent == "overview":    # also works after the workout is finished
             return self.overview()
         if self.current() is None:
@@ -238,6 +247,8 @@ class Session:
         else:
             self.move_to_next_exercise()
             reply += f"{ex['name']} done. "
+        if self.current() is None:      # that was the final set of the workout
+            return self.finish()
         reply += "Next: " + self.describe_current()
         if self.current() is not None:  # no rest after the final set of the workout
             self.rest_seconds = ex["rest"]
@@ -249,6 +260,8 @@ class Session:
         self.log.append({"exercise": ex["name"], "set": self.set_number,
                          "note": "stopped: pain"})
         self.move_to_next_exercise()
+        if self.current() is None:      # that was the last exercise
+            return self.finish()
         return (f"Stopping {ex['name']}. If the pain is sharp or doesn't go "
                 f"away, stop training and get it checked. "
                 f"Next: {self.describe_current()}")
@@ -287,6 +300,51 @@ class Session:
     def overview(self):
         return (f"Today is {self.today}: {self.todays_exercises()}. "
                 "Say 'what's first' to start.")
+
+    # ---------- Summary ----------
+
+    def logged_sets(self):
+        return [entry for entry in self.log if "reps" in entry]
+
+    def counts(self):
+        """'4 sets across 2 exercises', counting only exercises with sets logged."""
+        sets = self.logged_sets()
+        exercises = {entry["exercise"] for entry in sets}
+        return f"{plural(len(sets), 'set')} across {plural(len(exercises), 'exercise')}"
+
+    def summary(self):
+        """A short spoken summary, and fuller lines for the screen."""
+        spoken = f"Workout done. You logged {self.counts()}."
+        pained = list(dict.fromkeys(entry["exercise"] for entry in self.log
+                                    if entry.get("note") == "stopped: pain"))
+        if pained:
+            spoken += f" You stopped {and_list(pained)} because of pain, so take it easy next time."
+        next_day = self.routine[(self.routine.index(self.today) + 1) % len(self.routine)]
+        spoken += f" Next session: {next_day}."
+
+        details = []
+        for name in dict.fromkeys(entry["exercise"] for entry in self.log):  # in order
+            sets = [entry for entry in self.logged_sets() if entry["exercise"] == name]
+            line = f"{name}: {plural(len(sets), 'set')}"
+            if sets:   # best set: heaviest weight, then most reps
+                best = max(sets, key=lambda entry: (entry["weight"], entry["reps"]))
+                line += f", best {best['weight']:g} kg x {best['reps']}"
+            notes = [entry["note"] for entry in self.log
+                     if entry["exercise"] == name and "note" in entry]
+            if notes:
+                line += f" ({', '.join(notes)})"
+            details.append(line)
+        return spoken, details
+
+    def finish(self):
+        """The workout just ended: speak the summary and send the details."""
+        spoken, self.details = self.summary()
+        return spoken
+
+    def progress(self):
+        if self.current() is None:
+            return self.finish()
+        return f"So far: {self.counts()}. Next up: " + self.describe_current()
 
     def form(self):
         name = self.current()["name"]
