@@ -182,6 +182,7 @@ p { margin: 0; }
 }
 
 .hint-chip span { color: var(--text); }
+.hint-chip .hint-extra { display: block; }   /* its own line under the main hint */
 
 /* ---------- Buttons and inputs ---------- */
 button,

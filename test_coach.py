@@ -1,5 +1,6 @@
 """Sanity tests for coach.py. Run: python test_coach.py"""
-from coach import ROUTINES, next_weight, round_down, spoken_duration, Session
+from coach import (FORM_CUES, ROUTINES, TEMPLATES, next_weight, round_down,
+                   spoken_duration, Session)
 
 
 def upper_day():
@@ -194,6 +195,27 @@ def test_undo_with_numbers_starts_no_rest():
     s.handle("set_done", reps=8)
     reply = s.handle("undo", weight=40, reps=10)
     assert s.rest_seconds == 0 and "Rest" not in reply
+
+
+def test_every_exercise_has_a_form_cue():
+    for day, exercises in TEMPLATES.items():
+        for ex in exercises:
+            for name in (ex["name"], ex["alternative"]["name"]):
+                assert name in FORM_CUES, f"no form cue for {name} ({day})"
+
+
+def test_form_cue():
+    s = upper_day()
+    reply = s.handle("form")
+    assert reply.startswith("Bench Press: ") and "45 degrees" in reply
+    assert reply.endswith("If anything feels sharp or painful, stop.")
+    assert s.rest_seconds == 0 and s.log == []
+
+
+def test_form_before_routine_changes_nothing():
+    s = Session()
+    assert s.handle("form") == "Say 'what workout should I do?' to set up your routine."
+    assert s.routine is None and s.awaiting is None
 
 
 if __name__ == "__main__":

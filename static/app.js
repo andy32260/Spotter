@@ -162,6 +162,7 @@ function showState(data) {
   }
   $("hint").textContent = loaded ? "Coach, what's first?"
     : "Coach, what workout should I do?";
+  $("hint-form").hidden = !loaded;   // once today's workout is set up
 }
 
 // The week as chips; today's chip is marked for screen readers too.

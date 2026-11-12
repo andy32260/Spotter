@@ -79,6 +79,11 @@ def test_whats_first_is_next():
     check("what's first", "next")
 
 
+def test_form():
+    assert parser.parse_regex("how do I do this")["intent"] == "form"
+    assert parser.parse_regex("how do I do this, it hurts")["intent"] == "pain"
+
+
 def test_pain_wins_over_undo():
     check("that was wrong it hurt", "pain")
 
