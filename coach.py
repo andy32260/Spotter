@@ -8,17 +8,61 @@ Python here, so it is consistent and easy to explain and test.
 import copy
 import math
 
-# The workout plan. Each exercise has a starting weight (kg), target reps,
-# number of sets and one alternative for when the equipment is taken.
-# TODO 
-PLAN = [
-    {"name": "Bench Press", "weight": 40, "reps": 10, "sets": 3,
-     "alternative": {"name": "Seated Chest Press", "weight": 30}},
-    {"name": "Squat", "weight": 40, "reps": 10, "sets": 3,
-     "alternative": {"name": "Leg Press", "weight": 80}},
-    {"name": "Bicep Curl", "weight": 7.5, "reps": 10, "sets": 3,
-     "alternative": {"name": "Preacher Curl", "weight": 15}},
+# The workout templates. Every exercise is 3 sets of 10 reps, with a starting
+# weight (kg) and one alternative for when the equipment is taken.
+# TODO
+def exercise(name, weight, alt_name, alt_weight):
+    return {"name": name, "weight": weight, "reps": 10, "sets": 3,
+            "alternative": {"name": alt_name, "weight": alt_weight}}
+
+
+LOWER = [
+    exercise("Squat", 40, "Leg Press", 80),
+    exercise("Romanian Deadlift", 40, "Lying Leg Curl", 25),
+    exercise("Leg Extension", 25, "Goblet Squat", 12.5),
 ]
+
+TEMPLATES = {
+    "Full Body": [
+        exercise("Squat", 40, "Leg Press", 80),
+        exercise("Bench Press", 40, "Seated Chest Press", 30),
+        exercise("Seated Cable Row", 35, "Dumbbell Row", 12.5),
+    ],
+    "Upper": [
+        exercise("Bench Press", 40, "Seated Chest Press", 30),
+        exercise("Seated Cable Row", 35, "Dumbbell Row", 12.5),
+        exercise("Bicep Curl", 7.5, "Preacher Curl", 15),
+    ],
+    "Lower": LOWER,
+    "Legs": LOWER,
+    "Push": [
+        exercise("Bench Press", 40, "Seated Chest Press", 30),
+        exercise("Dumbbell Shoulder Press", 10, "Machine Shoulder Press", 20),
+        exercise("Tricep Pushdown", 15, "Overhead Tricep Extension", 10),
+    ],
+    "Pull": [
+        exercise("Lat Pulldown", 35, "Seated Cable Row", 35),
+        exercise("Dumbbell Row", 12.5, "Seated Cable Row", 35),
+        exercise("Bicep Curl", 7.5, "Preacher Curl", 15),
+    ],
+}
+
+# The week's workouts, by how many days a week you train (7 is capped at 6).
+ROUTINES = {
+    1: ["Full Body"],
+    2: ["Full Body", "Full Body"],
+    3: ["Upper", "Lower", "Full Body"],
+    4: ["Upper", "Lower", "Upper", "Lower"],
+    5: ["Push", "Pull", "Legs", "Upper", "Lower"],
+    6: ["Push", "Pull", "Legs", "Push", "Pull", "Legs"],
+}
+
+ASK_DAYS = "How many days a week will you be training?"
+
+
+def and_list(items):
+    """['A', 'B', 'C'] -> 'A, B and C'."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 # ---------- The maths (Epley formula) ----------
@@ -48,9 +92,11 @@ def next_weight(weight, reps_done, target_reps):
 # ---------- The session (remembers where you are) ----------
 
 class Session:
-    def __init__(self, plan=PLAN):
-        # Copy each exercise so changing weights never edits the original PLAN.
-        self.plan = [dict(exercise) for exercise in plan]
+    def __init__(self):
+        self.routine = None     # the week's workout names, once chosen
+        self.today = None       # today's workout name, e.g. "Upper"
+        self.plan = []          # today's exercises (copies, so weights can change)
+        self.awaiting = None    # "days" while waiting for "how many days a week?"
         self.index = 0          # which exercise we are on
         self.set_number = 1     # which set of that exercise
         self.log = []           # everything that happened, shown on screen
@@ -62,6 +108,8 @@ class Session:
         return None             # workout finished
 
     def describe_current(self):
+        if self.routine is None:
+            return "No routine yet."
         ex = self.current()
         if ex is None:
             return "That's the workout done. Nice work."
@@ -73,9 +121,32 @@ class Session:
         self.set_number = 1
 
     # One function per intent. handle() picks which one to run.
-    def handle(self, intent, weight=None, reps=None):
+    def handle(self, intent, weight=None, reps=None, days=None):
+        # Safety first: pain is handled in every state, even during setup.
+        if intent == "pain":
+            if self.routine is None:
+                self.awaiting = None    # don't carry on asking about days
+                return ("If something hurts before you've even started, rest "
+                        "today and get it checked if it doesn't settle.")
+            if self.current() is None:
+                return ("That's the workout done. If something hurts, rest and "
+                        "get it checked if it doesn't settle.")
+            return self.pain()
+        # "unknown" may just be background talk, so it never changes anything.
+        # While waiting for "how many days a week?", any other number is the answer.
+        if self.awaiting == "days" and intent != "unknown":
+            return self.choose_days(days or reps or weight)
+        if self.routine is None:
+            if intent == "overview":    # the only way to start setting up
+                self.awaiting = "days"
+                return self.choose_days(days) if days else "Let's set you up. " + ASK_DAYS
+            if self.awaiting == "days":
+                return "Sorry, I need a number from 1 to 7. " + ASK_DAYS
+            return "Say 'what workout should I do?' to set up your routine."
         if intent == "undo":    # before the "done" check, so the last set can be undone
             return self.undo(weight, reps)
+        if intent == "overview":    # also works after the workout is finished
+            return self.overview()
         if self.current() is None:
             return "That's the workout done. Nice work."
         if intent == "next":
@@ -138,6 +209,29 @@ class Session:
                          "note": f"swapped to {alt['name']}"})
         ex["name"], ex["weight"] = alt["name"], alt["weight"]
         return f"No problem, switch to {self.describe_current()}"
+
+    def choose_days(self, days):
+        if days is None or days != int(days) or not 1 <= days <= 7:
+            return "Sorry, I need a number from 1 to 7. " + ASK_DAYS
+        days, note = int(days), ""
+        if days == 7:
+            days = 6
+            note = ("Seven days leaves no rest day, and beginners need recovery, "
+                    "so I've set you up on 6. ")
+        self.awaiting = None
+        self.routine = ROUTINES[days]
+        self.today = self.routine[0]    # today is day 1 of the week
+        self.plan = [dict(ex) for ex in TEMPLATES[self.today]]
+        return (note + f"{days} days a week: {and_list(self.routine)}. "
+                f"Today is {self.today}: {self.todays_exercises()}. "
+                "Say 'what's first' when you're ready.")
+
+    def todays_exercises(self):
+        return and_list([ex["name"] for ex in self.plan])
+
+    def overview(self):
+        return (f"Today is {self.today}: {self.todays_exercises()}. "
+                "Say 'what's first' to start.")
 
     def undo(self, weight, reps):
         if self.snapshot is None:

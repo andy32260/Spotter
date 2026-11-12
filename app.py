@@ -24,24 +24,27 @@ def index():
     return app.send_static_file("index.html")
 
 
+def state():
+    """What the page shows: the current set, the log and the week."""
+    return {"current": session.describe_current(), "log": session.log,
+            "week": session.routine, "today": session.today}
+
+
 @app.post("/api/turn")
 def turn():
     text = (request.get_json(silent=True) or {}).get("text", "")
     heard = parse(text)
-    reply = session.handle(heard["intent"], heard["weight"], heard["reps"])
-    return jsonify(
-        heard=heard,
-        reply=reply,
-        current=session.describe_current(),
-        log=session.log,
-    )
+    print(f"[turn] heard {text!r} -> {heard}", flush=True)  # for debugging
+    reply = session.handle(heard["intent"], heard["weight"], heard["reps"],
+                           heard["days"])
+    return jsonify(heard=heard, reply=reply, **state())
 
 
 @app.post("/api/reset")
 def reset():
     global session
-    session = Session()
-    return jsonify(current=session.describe_current(), log=session.log)
+    session = Session()    # clears the routine too
+    return jsonify(**state())
 
 
 if __name__ == "__main__":

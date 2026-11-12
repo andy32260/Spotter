@@ -10,7 +10,8 @@ import re
 
 from groq import Groq
 
-INTENTS = ["next", "set_done", "pain", "equipment_taken", "undo", "unknown"]
+INTENTS = ["next", "set_done", "pain", "equipment_taken", "undo", "overview",
+           "unknown"]
 PAIN_WORDS = [
     "hurt", "pain", "sore", "twinge", "injur", "killing", "ache", "aching",
     "tweak", "tweaked", "pulled", "strain", "agony", "can't move",
@@ -26,32 +27,39 @@ NUMBER_WORDS = [
 INTENT_WORDS = [
     ("pain", PAIN_WORDS),
     ("undo", ["undo", "wrong", "scratch that", "not right", "didn't say"]),
+    ("overview", ["what workout", "what exercises", "routine", "plan"]),
     ("equipment_taken", ["taken", "busy", "in use", "occupied", "someone on"]),
-    ("next", ["next", "what now", "ready", "start"]),
+    ("next", ["next", "what now", "ready", "start", "first"]),
 ]
 
-# A number, optionally followed by a unit: "60kg", "60 kilos", "8 reps", "8".
-NUMBER_WITH_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(kgs?|kilos?|reps?)?\b")
+# A number, optionally followed by a unit: "60kg", "60 kilos", "8 reps",
+# "3 days", "8".
+NUMBER_WITH_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(kgs?|kilos?|reps?|days?)?\b")
 
 LLM_INSTRUCTION = """You read what a beginner says to their gym coach.
-Return JSON with "intent", "weight" (kg) and "reps".
-intent is one of: next, set_done, pain, equipment_taken, undo, unknown.
+Return JSON with "intent", "weight" (kg), "reps" and "days" (days a week).
+intent is one of: next, set_done, pain, equipment_taken, undo, overview, unknown.
+Use overview when the user asks what workout or exercises they should do,
+or says how many days a week they can train.
 Use undo when the user says the last set was recorded wrong; include the
 corrected weight and reps if they said them.
 Only extract what the user said. Never guess or invent numbers.
-Use null for weight or reps when the user didn't say them or you are unsure.
+Use null for weight, reps or days when the user didn't say them or you are unsure.
 
 Examples:
-"ugh that was rough, managed about 6" -> {"intent": "set_done", "weight": null, "reps": 6}
-"did sixty for eight" -> {"intent": "set_done", "weight": 60, "reps": 8}
-"someone's on the bench" -> {"intent": "equipment_taken", "weight": null, "reps": null}
-"what am I doing now" -> {"intent": "next", "weight": null, "reps": null}
-"no that's wrong, it was 60 kilos 8 reps" -> {"intent": "undo", "weight": 60, "reps": 8}"""
+"ugh that was rough, managed about 6" -> {"intent": "set_done", "weight": null, "reps": 6, "days": null}
+"did sixty for eight" -> {"intent": "set_done", "weight": 60, "reps": 8, "days": null}
+"someone's on the bench" -> {"intent": "equipment_taken", "weight": null, "reps": null, "days": null}
+"what am I doing now" -> {"intent": "next", "weight": null, "reps": null, "days": null}
+"what workout should I do" -> {"intent": "overview", "weight": null, "reps": null, "days": null}
+"I can train three days a week" -> {"intent": "overview", "weight": null, "reps": null, "days": 3}
+"no that's wrong, it was 60 kilos 8 reps" -> {"intent": "undo", "weight": 60, "reps": 8, "days": null}"""
 
 def parse(text):
     # Safety override: pain is caught by plain keywords, never left to the AI.
     if any(word in text.lower() for word in PAIN_WORDS):
-        return {"intent": "pain", "weight": None, "reps": None, "source": "regex"}
+        return {"intent": "pain", "weight": None, "reps": None, "days": None,
+                "source": "regex"}
 
     if not os.getenv("GROQ_API_KEY"):
         reason = "no key"
@@ -59,7 +67,10 @@ def parse(text):
         reason = "no model (set GROQ_MODEL in .env)"
     else:
         try:
-            return {**validated(parse_llm(text)), "source": "ai"}
+            result = only_said_numbers(validated(parse_llm(text)), text)
+            if result["intent"] == "unknown" and result["days"] is not None:
+                result["intent"] = "overview"   # "3 days a week" answers the setup question
+            return {**result, "source": "ai"}
         except Exception as error:  # any failure at all: use the regex instead
             reason = fallback_reason(error)
 
@@ -96,10 +107,11 @@ def parse_llm(text):
 
 def validated(result):
     """Never trust the AI's output blindly: raise ValueError if it's malformed."""
-    intent, weight, reps = result["intent"], result["weight"], result["reps"]
+    intent, weight, reps, days = (result["intent"], result["weight"],
+                                  result["reps"], result["days"])
     if intent not in INTENTS:
         raise ValueError(f"unknown intent {intent!r}")
-    for value in (weight, reps):
+    for value in (weight, reps, days):
         # bool is excluded because Python treats True as the number 1.
         if value is not None and (isinstance(value, bool)
                                   or not isinstance(value, (int, float))):
@@ -108,7 +120,27 @@ def validated(result):
         "intent": intent,
         "weight": None if weight is None else float(weight),
         "reps": None if reps is None else int(reps),
+        "days": None if days is None else int(days),
     }
+
+
+def only_said_numbers(result, text):
+    """The AI can invent numbers (e.g. days: 6 for "what workout should I do").
+    Keep each number only if the user actually said it; otherwise use null."""
+    said = numbers_said(text)
+    for key in ("weight", "reps", "days"):
+        if result[key] is not None and float(result[key]) not in said:
+            print(f"[guard] dropped {key}={result[key]}: not said in {text!r}", flush=True)
+            result[key] = None
+    return result
+
+
+def numbers_said(text):
+    """Every number in text, as digits or words one to thirty: 'six or 7' -> {6.0, 7.0}."""
+    text = re.sub(r"\btwenty[- ](one|two|three|four|five|six|seven|eight|nine)\b",
+                  lambda m: str(21 + NUMBER_WORDS.index(m.group(1))), text.lower())
+    text = re.sub(r"\bthirty\b", "30", words_to_digits(text))
+    return {float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)}
 
 
 def words_to_digits(text):
@@ -120,27 +152,31 @@ def words_to_digits(text):
 
 def parse_regex(text):
     text = words_to_digits(text.lower())
-    weight, reps = extract_numbers(text)
+    weight, reps, days = extract_numbers(text)
 
     for intent, words in INTENT_WORDS:
         if any(word in text for word in words):
             if intent == "undo":    # "scratch that, 60 for 8" keeps its numbers
-                return {"intent": "undo", "weight": weight, "reps": reps}
-            return {"intent": intent, "weight": None, "reps": None}
+                return {"intent": "undo", "weight": weight, "reps": reps, "days": days}
+            return {"intent": intent, "weight": None, "reps": None, "days": days}
 
     if weight is None and reps is None:
-        return {"intent": "unknown", "weight": None, "reps": None}
-    return {"intent": "set_done", "weight": weight, "reps": reps}
+        # "3 days a week" answers the setup question; anything else is unknown.
+        intent = "overview" if days is not None else "unknown"
+        return {"intent": intent, "weight": None, "reps": None, "days": days}
+    return {"intent": "set_done", "weight": weight, "reps": reps, "days": days}
 
 
 def extract_numbers(text):
-    """Find the weight and reps in text. Either can be None."""
-    weight, reps, bare = None, None, []
+    """Find the weight, reps and days a week in text. Any can be None."""
+    weight, reps, days, bare = None, None, None, []
     for number, unit in NUMBER_WITH_UNIT.findall(text):
         if unit.startswith("k"):
             weight = float(number)
         elif unit.startswith("r"):
             reps = int(float(number))
+        elif unit.startswith("d"):
+            days = int(float(number))
         else:
             bare.append(number)
 
@@ -153,4 +189,4 @@ def extract_numbers(text):
     elif bare and weight is None:
         weight = float(bare[0])
 
-    return weight, reps
+    return weight, reps, days

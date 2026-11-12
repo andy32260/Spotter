@@ -70,6 +70,28 @@ input:focus-visible {
   color: #4fc3ff;
 }
 
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings .secondary {
+  margin-top: 0;
+}
+
+select {
+  max-width: 100%;
+  font-size: 1.2rem;
+  min-height: 3.5rem;
+  padding: 0 0.5rem;
+  border: 3px solid #fff;
+  border-radius: 0.5rem;
+  background: #111;
+  color: #fff;
+}
+
 .warning {
   color: #ff6b6b;
   font-weight: bold;

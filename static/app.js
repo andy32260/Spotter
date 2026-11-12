@@ -5,13 +5,63 @@ let handsFreeOn = false;
 let handsFree = null;  // the always-listening recogniser (set up below)
 let speaking = null;   // the reply currently being read out, if any
 
+// Settings are remembered in this browser. Storage can be blocked (e.g. private
+// windows), so every read and write is wrapped and falls back quietly.
+const settings = {
+  load(key, fallback) {
+    try { return localStorage.getItem("coach." + key) ?? fallback; } catch (e) { return fallback; }
+  },
+  save(key, value) {
+    try { localStorage.setItem("coach." + key, value); } catch (e) { /* not saved: fine */ }
+  },
+};
+
+// An ON/OFF button that remembers its state. Returns a function to read it.
+function toggle(id, label, key, defaultOn, onChange) {
+  let on = settings.load(key, defaultOn ? "on" : "off") === "on";
+  const show = () => {
+    $(id).textContent = `${label}: ${on ? "ON" : "OFF"}`;
+    $(id).setAttribute("aria-pressed", on);
+  };
+  $(id).addEventListener("click", () => {
+    on = !on;
+    settings.save(key, on ? "on" : "off");
+    show();
+    onChange(on);
+  });
+  show();
+  return () => on;
+}
+
+// Wake word OFF (default): hands-free acts on everything you say.
+// Wake word ON: only on "coach ..." / "hey coach ...", plus the follow-up window.
+const wakeWordOn = toggle("wake-word", "Wake word", "wakeWord", false, updateStatus);
+
+// Voice OFF: replies are shown as text only, never spoken.
+const voiceOn = toggle("voice-on", "Voice", "voice", true, (on) => {
+  if (on) return;
+  if (window.speechSynthesis) speechSynthesis.cancel(); // stop mid-reply
+  speaking = null;    // don't wait for the cancelled reply to report back
+  startListening();   // so the mic comes straight back on
+  updateStatus();
+});
+
 // Follow-up window: when the coach asks a question ("How many reps did you
 // get?"), people just answer ("eight") without saying "coach" first. So for
-// 8 seconds after a question finishes, we accept an answer without the wake word.
+// 8 seconds after a question (once it has been spoken, or as soon as it is
+// shown when the voice is off), we accept an answer without the wake word.
 const FOLLOW_UP_MS = 8000;
 let followUpUntil = 0; // time (ms) the window closes; 0 = closed
 let followUpTimer = null;
 const answerWindowOpen = () => Date.now() < followUpUntil;
+
+function openFollowUp() {
+  followUpUntil = Date.now() + FOLLOW_UP_MS;
+  console.log(`[follow-up] opened at ${Date.now()}, should expire at ${followUpUntil}`);
+  clearTimeout(followUpTimer);
+  followUpTimer = setTimeout(() => closeFollowUp("expired"), FOLLOW_UP_MS);
+  updateStatus();
+}
 
 function closeFollowUp(why) {
   clearTimeout(followUpTimer);
@@ -21,7 +71,8 @@ function closeFollowUp(why) {
 }
 
 // Send text to the server and show/speak the coach's answer.
-async function sendText(text) {
+// fromHandsFree: true when it came from the always-on microphone.
+async function sendText(text, fromHandsFree = false) {
   if (!text.trim()) return;
   $("heard").textContent = text;
   const response = await fetch("/api/turn", {
@@ -30,6 +81,12 @@ async function sendText(text) {
     body: JSON.stringify({ text }),
   });
   const data = await response.json();
+  // Without a wake word, background talk reaches the coach. If it didn't
+  // understand it, assume it wasn't meant for it: no reply, shown or spoken.
+  if (fromHandsFree && !wakeWordOn() && data.heard.intent === "unknown") {
+    $("heard").textContent = "Ignored: " + text;
+    return;
+  }
   $("source").textContent = data.heard.source === "ai" ? "AI (Groq)" : "Regex rules";
   $("reply").textContent = data.reply;
   showState(data);
@@ -39,30 +96,78 @@ async function sendText(text) {
 function showState(data) {
   $("current").textContent = data.current;
   renderLog(data.log);
+  // The week appears once a routine is loaded; until then, a hint to set one up.
+  const loaded = Boolean(data.week);
+  $("week").hidden = $("today").hidden = !loaded;
+  if (loaded) {
+    $("week-days").textContent = data.week.join(", ");
+    $("today-name").textContent = data.today;
+  }
+  $("hint").textContent = loaded ? "Say: Coach, what's first?"
+    : "Say: Coach, what workout should I do?";
 }
 
 // The coach must never hear itself: stop listening while it talks,
 // and start again once it has finished.
 function speak(text) {
+  closeFollowUp("new reply"); // a new reply replaces any earlier question
+  const isQuestion = text.trim().endsWith("?");
+  if (!voiceOn()) {           // text only: nothing to wait for, mic stays on
+    if (isQuestion) openFollowUp();
+    return;
+  }
   speechSynthesis.cancel(); // stop any reply that is still being read out
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-GB";
+  const voice = chosenVoice();
+  utterance.voice = voice;
+  utterance.lang = voice ? voice.lang : "en-GB";
   speaking = utterance;
-  closeFollowUp("new reply"); // a new reply replaces any earlier question
   if (handsFreeOn) handsFree.abort();
   utterance.onend = utterance.onerror = () => {
     if (speaking !== utterance) return; // an older reply we cancelled: ignore
     speaking = null;
-    if (text.trim().endsWith("?")) {   // the window starts once it has finished asking
-      followUpUntil = Date.now() + FOLLOW_UP_MS;
-      console.log(`[follow-up] opened at ${Date.now()}, should expire at ${followUpUntil}`);
-      clearTimeout(followUpTimer);
-      followUpTimer = setTimeout(() => closeFollowUp("expired"), FOLLOW_UP_MS);
-    }
+    if (isQuestion) openFollowUp();     // the window starts once it has finished asking
     startListening();
     updateStatus();
   };
+  updateStatus();
   speechSynthesis.speak(utterance);
+}
+
+// The coach's voice. Voices load asynchronously, so we fill the list now and
+// again whenever the browser says the list has changed.
+let englishVoices = [];
+
+// The most natural-sounding English voice available, or null for the default.
+function bestVoice(voices) {
+  const natural = (v) => /natural|online/i.test(v.name);
+  const british = (v) => v.lang.replace("_", "-") === "en-GB";
+  return voices.find((v) => british(v) && natural(v))
+    || voices.find(natural)
+    || voices.find((v) => /^Google UK English (Female|Male)$/.test(v.name))
+    || voices.find(british)
+    || null;
+}
+
+function loadVoices() {
+  englishVoices = speechSynthesis.getVoices().filter((v) => /^en[-_]/i.test(v.lang));
+  $("voice").replaceChildren(
+    new Option("Browser default", ""),
+    ...englishVoices.map((v) => new Option(`${v.name} (${v.lang})`, v.name)),
+  );
+  // Use the saved choice if it still exists, otherwise the best one.
+  const saved = settings.load("voiceName", null);
+  const savedExists = saved === "" || englishVoices.some((v) => v.name === saved);
+  $("voice").value = savedExists ? saved : (bestVoice(englishVoices)?.name ?? "");
+  console.log(`[voice] ${englishVoices.length} English voices, using: ${$("voice").value || "browser default"}`);
+}
+
+const chosenVoice = () => englishVoices.find((v) => v.name === $("voice").value) || null;
+
+if (window.speechSynthesis) {
+  loadVoices();
+  speechSynthesis.addEventListener("voiceschanged", loadVoices);
+  $("voice").addEventListener("change", () => settings.save("voiceName", $("voice").value));
 }
 
 function updateStatus() {
@@ -116,12 +221,13 @@ if (Recognition) {
   recognition.onend = () => { $("talk").textContent = "Tap to talk"; };
 
   $("talk").addEventListener("click", () => {
-    speechSynthesis.cancel(); // don't let the coach's voice be picked up
+    if (voiceOn()) speechSynthesis.cancel(); // don't let the coach's voice be picked up
     $("talk").textContent = "Listening...";
     recognition.start();
   });
 
-  // Hands-free: listen all the time, but only act on "coach ..." / "hey coach ...".
+  // Hands-free: listen all the time. With the wake word ON, only act on
+  // "coach ..." / "hey coach ..." (or an answer inside the follow-up window).
   handsFree = new Recognition();
   handsFree.lang = "en-GB";
   handsFree.continuous = true;
@@ -130,17 +236,21 @@ if (Recognition) {
   handsFree.onresult = (event) => {
     const text = event.results[event.resultIndex][0].transcript.trim();
     const match = text.match(/^(hey\s+)?coach\b[,.!]?\s*(.*)$/i);
+    const command = (match ? match[2] : text).trim(); // without the wake word
     console.log(`[hands-free] final result at ${Date.now()}: "${text}" (window expires ${followUpUntil})`);
-    if (!match && !answerWindowOpen()) {
+    if (!command) {                          // silence, or just "coach": nothing to send
+      console.log("[hands-free] ignored: empty");
+      return;
+    }
+    if (wakeWordOn() && !match && !answerWindowOpen()) {
       console.log("[hands-free] ignored: no wake word, window closed");
       $("heard").textContent = "Ignored (no wake word): " + text;
       return;
     }
-    console.log(`[hands-free] accepted: ${match ? "wake word" : "inside follow-up window"}`);
-    const command = match ? match[2] : text; // strip the wake word if there is one
-    if (!command) return;                    // just "coach": wait for the rest
+    console.log(`[hands-free] accepted: ${match ? "wake word"
+      : wakeWordOn() ? "inside follow-up window" : "wake word off"}`);
     closeFollowUp("answered");               // one answer closes the window
-    sendText(command);
+    sendText(command, true);
   };
 
   // Chrome stops listening after a silence: start again straight away.
@@ -178,6 +288,7 @@ $("text-form").addEventListener("submit", (event) => {
   $("text").value = "";
 });
 
+// New session: clears the routine, so the coach asks for days a week again.
 $("reset").addEventListener("click", async () => {
   const data = await (await fetch("/api/reset", { method: "POST" })).json();
   $("heard").textContent = "...";

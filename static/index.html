@@ -8,12 +8,22 @@
 </head>
 <body>
   <main>
+    <p id="hint" class="status">Say: Coach, what workout should I do?</p>
+    <p id="week" hidden><span class="label">Your week:</span> <span id="week-days"></span></p>
+    <p id="today" hidden><span class="label">Today:</span> <span id="today-name"></span></p>
+
     <p class="label">Current exercise</p>
     <h1 id="current">Tap to talk to begin</h1>
 
     <button id="talk" class="talk">Tap to talk</button>
     <button id="hands-free" class="secondary" aria-pressed="false" disabled>Hands-free: OFF</button>
     <p id="status" class="status">Hands-free off</p>
+    <div class="settings">
+      <button id="wake-word" class="secondary" aria-pressed="false">Wake word: OFF</button>
+      <button id="voice-on" class="secondary" aria-pressed="true">Voice: ON</button>
+      <label for="voice" class="label">Coach's voice</label>
+      <select id="voice"><option value="">Browser default</option></select>
+    </div>
     <p id="unsupported" class="warning" hidden>
       Voice input isn't supported in this browser. Please use Chrome or Edge,
       or type below.
