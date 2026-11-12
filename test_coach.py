@@ -1,6 +1,6 @@
 """Sanity tests for coach.py. Run: python test_coach.py"""
-from coach import (FORM_CUES, ROUTINES, TEMPLATES, next_weight, round_down,
-                   spoken_duration, Session)
+from coach import (EQUIPMENT, FORM_CUES, ROUTINES, TEMPLATES, barbell_load,
+                   how_to_load, next_weight, round_down, spoken_duration, Session)
 
 
 def upper_day():
@@ -357,6 +357,56 @@ def test_no_nudge_when_target_missed():
     reply = s.handle("set_done", weight=40, reps=7, effort="easy")
     assert s.current()["weight"] == next_weight(40, 7, 10)   # the normal Epley drop
     assert "Felt" not in reply
+
+
+def test_barbell_plates():
+    assert barbell_load(40) == "For 40 kilos: the 20 kilo bar plus a 10 on each side."
+    assert barbell_load(60) == "For 60 kilos: the 20 kilo bar plus a 20 on each side."
+    assert barbell_load(42.5) == ("For 42.5 kilos: the 20 kilo bar plus a 10 and "
+                                  "a 1.25 on each side.")
+    assert barbell_load(20) == "Just the empty bar."
+    assert barbell_load(15).startswith("That's lighter than the 20 kilo bar")
+    assert barbell_load(41) == ("You can't make 41 kilos exactly. The closest below is "
+                                "40 kilos: the 20 kilo bar plus a 10 on each side.")
+
+
+def test_dumbbells_and_machines():
+    assert how_to_load("Dumbbell Shoulder Press", 10) == "Grab the 10 kilo dumbbells."
+    assert how_to_load("Goblet Squat", 12.5) == "Grab one 12.5 kilo dumbbell."
+    assert how_to_load("Lat Pulldown", 35) == (
+        "Set the pin to 35 kilos, or the nearest stack weight.")
+
+
+def test_every_exercise_has_equipment():
+    for exercises in TEMPLATES.values():
+        for ex in exercises:
+            for name in (ex["name"], ex["alternative"]["name"]):
+                assert name in EQUIPMENT, f"no equipment for {name}"
+
+
+def test_plates_use_the_warm_up_weight():
+    s = upper_day()
+    assert s.handle("plates") == "For 40 kilos: the 20 kilo bar plus a 10 on each side."
+    s.handle("next")                                   # warm-up pending: 20 kg
+    assert s.handle("plates") == "Just the empty bar."
+    assert s.awaiting == "effort"                      # still waiting for the answer
+
+
+def test_longer_rest_after_a_missed_set():
+    s = upper_day()
+    reply = s.handle("set_done", weight=40, reps=8)    # target is 10
+    assert s.rest_seconds == 180
+    assert reply.endswith("That one was tough, so take an extra 30 seconds. Rest 3 minutes.")
+    s = upper_day()
+    s.handle("set_done", weight=40, reps=10)
+    assert s.rest_seconds == 150
+
+
+def test_corrected_missed_set_starts_no_rest():
+    s = upper_day()
+    s.handle("set_done", weight=40, reps=10)
+    reply = s.handle("undo", weight=40, reps=8)
+    assert s.rest_seconds == 0 and "Rest" not in reply and "tough" not in reply
 
 
 if __name__ == "__main__":

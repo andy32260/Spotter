@@ -108,6 +108,61 @@ ASK_DAYS = "How many days a week will you be training?"
 ASK_EFFORT = "How did it feel: easy, about right or hard?"
 
 
+# ---------- Loading the weight ----------
+
+# What each exercise (and alternative) is done with.
+#   barbell   = a 20 kg bar plus plates
+#   dumbbells = a pair, the weight is per hand
+#   dumbbell  = one dumbbell
+#   machine   = a machine or cable stack with a pin
+EQUIPMENT = {
+    "Bench Press": "barbell", "Squat": "barbell", "Romanian Deadlift": "barbell",
+    "Dumbbell Row": "dumbbells", "Dumbbell Shoulder Press": "dumbbells",
+    "Bicep Curl": "dumbbells",
+    "Goblet Squat": "dumbbell", "Overhead Tricep Extension": "dumbbell",
+    "Seated Chest Press": "machine", "Leg Press": "machine",
+    "Seated Cable Row": "machine", "Preacher Curl": "machine",
+    "Lying Leg Curl": "machine", "Leg Extension": "machine",
+    "Machine Shoulder Press": "machine", "Tricep Pushdown": "machine",
+    "Lat Pulldown": "machine",
+}
+
+BAR = 20                                       # kg
+PLATES = [25, 20, 15, 10, 5, 2.5, 1.25]        # kg, largest first
+
+
+def how_to_load(name, weight):
+    kind = EQUIPMENT[name]
+    if kind == "barbell":
+        return barbell_load(weight)
+    if kind == "dumbbells":
+        return f"Grab the {weight:g} kilo dumbbells."
+    if kind == "dumbbell":
+        return f"Grab one {weight:g} kilo dumbbell."
+    return f"Set the pin to {weight:g} kilos, or the nearest stack weight."
+
+
+def barbell_load(weight):
+    """'For 40 kilos: the 20 kilo bar plus a 10 on each side.'"""
+    if weight < BAR:
+        return "That's lighter than the 20 kilo bar, so use a lighter fixed bar or dumbbells."
+    if weight == BAR:
+        return "Just the empty bar."
+    # Fill each side greedily, biggest plate first.
+    per_side, plates = (weight - BAR) / 2, []
+    for plate in PLATES:
+        while per_side >= plate:
+            plates.append(plate)
+            per_side = round(per_side - plate, 4)   # round() avoids float drift
+    loaded = BAR + 2 * sum(plates)
+    if not plates:
+        return f"You can't make {weight:g} kilos exactly. The closest below is just the empty bar."
+    load = f"the 20 kilo bar plus {and_list([f'a {p:g}' for p in plates])} on each side."
+    if loaded == weight:
+        return f"For {weight:g} kilos: {load}"
+    return f"You can't make {weight:g} kilos exactly. The closest below is {loaded:g} kilos: {load}"
+
+
 def warm_up_weight(planned):
     """Half the planned weight, rounded down to 2.5 kg, and never below 2.5 kg."""
     return max(2.5, round_down(planned / 2))
@@ -207,7 +262,7 @@ class Session:
                 return "Sorry, I need a number from 1 to 7. " + ASK_DAYS
             return "Say 'what workout should I do?' to set up your routine."
         # Waiting for "how did the warm-up feel?": only that answer (or undo) counts.
-        if self.awaiting == "effort" and intent != "undo":
+        if self.awaiting == "effort" and intent not in ("undo", "plates"):
             return self.calibrate(intent, effort)
         if intent == "undo":    # before the "done" check, so the last set can be undone
             return self.undo(weight, reps)
@@ -219,6 +274,8 @@ class Session:
             return "That's the workout done. Nice work."
         if intent == "form":
             return self.form()
+        if intent == "plates":
+            return self.plates()
         if intent == "next":
             return self.next_up()
         if intent in ("set_done", "effort"):   # "way too easy" is a set report too
@@ -279,7 +336,12 @@ class Session:
         reply += "Next: " + self.describe_current()
         if self.current() is not None:  # no rest after the final set of the workout
             self.rest_seconds = ex["rest"]
-            reply += f" Rest {spoken_duration(self.rest_seconds)}."
+            self.rest_reply = f" Rest {spoken_duration(self.rest_seconds)}."
+            if reps < ex["reps"]:       # missed the target: recover a bit longer
+                self.rest_seconds += 30
+                self.rest_reply = (" That one was tough, so take an extra 30 seconds."
+                                   f" Rest {spoken_duration(self.rest_seconds)}.")
+            reply += self.rest_reply
         return reply
 
     def pain(self):
@@ -373,6 +435,14 @@ class Session:
             return self.finish()
         return f"So far: {self.counts()}. Next up: " + self.describe_current()
 
+    def plates(self):
+        """What to put on the bar (or which dumbbells, or where to set the pin)."""
+        ex = self.current()
+        weight = ex["weight"]
+        if self.awaiting == "effort":   # a warm-up is pending: load for that
+            weight = warm_up_weight(weight)
+        return how_to_load(ex["name"], weight)
+
     def form(self):
         name = self.current()["name"]
         return f"{name}: {FORM_CUES[name]} If anything feels sharp or painful, stop."
@@ -423,7 +493,7 @@ class Session:
         if reps is not None:              # "no, it was 60 for 8": log the fix
             reply = self.set_done(weight, reps)
             if self.rest_seconds:         # a correction never starts a rest
-                reply = reply.removesuffix(f" Rest {spoken_duration(self.rest_seconds)}.")
+                reply = reply.removesuffix(self.rest_reply)
                 self.rest_seconds = 0
             return "Undone. " + reply
         return "Undone. " + self.describe_current()

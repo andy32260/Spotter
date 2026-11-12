@@ -11,7 +11,7 @@ import re
 from groq import Groq
 
 INTENTS = ["next", "set_done", "pain", "equipment_taken", "undo", "overview",
-           "form", "summary", "skip", "effort", "unknown"]
+           "form", "summary", "skip", "effort", "plates", "unknown"]
 EFFORTS = ["easy", "right", "hard"]
 PAIN_WORDS = [
     "hurt", "pain", "sore", "twinge", "injur", "killing", "ache", "aching",
@@ -28,6 +28,8 @@ NUMBER_WORDS = [
 INTENT_WORDS = [
     ("pain", PAIN_WORDS),
     ("undo", ["undo", "wrong", "scratch that", "not right", "didn't say"]),
+    ("plates", ["plates", "what do i load", "what goes on the bar", "how do i load",
+                "what weights do i put on"]),   # before "form", which has "how do i"
     ("skip", ["skip warm-up", "skip warmup", "skip"]),
     ("summary", ["how did i do", "summary", "recap", "how am i doing"]),
     ("form", ["how do i", "how should i", "form", "technique", "tips", "cues"]),
@@ -51,10 +53,11 @@ NUMBER_WITH_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(kgs?|kilos?|reps?|days?)?\b")
 LLM_INSTRUCTION = """You read what a beginner says to their gym coach.
 Return JSON with "intent", "weight" (kg), "reps", "days" (days a week) and
 "effort" (how a warm-up felt: "easy", "right", "hard" or null).
-intent is one of: next, set_done, pain, equipment_taken, undo, overview, form, summary, skip, effort, unknown.
+intent is one of: next, set_done, pain, equipment_taken, undo, overview, form, summary, skip, effort, plates, unknown.
 Use effort when the user says how the warm-up felt, and skip when they want to skip the warm-up.
 A set report can say how it felt too: put that in "effort" (reps may be null).
 Use form when the user asks how to do the exercise or for technique tips.
+Use plates when the user asks what weights or plates to load.
 Use summary when the user asks how their workout is going or for a recap.
 Use overview when the user asks what workout or exercises they should do,
 or says how many days a week they can train.
@@ -67,10 +70,12 @@ Examples:
 "ugh that was rough, managed about 6" -> {"intent": "set_done", "weight": null, "reps": 6, "days": null, "effort": null}
 "did sixty for eight" -> {"intent": "set_done", "weight": 60, "reps": 8, "days": null, "effort": null}
 "someone's on the bench" -> {"intent": "equipment_taken", "weight": null, "reps": null, "days": null, "effort": null}
+"what's first" -> {"intent": "next", "weight": null, "reps": null, "days": null, "effort": null}
 "what am I doing now" -> {"intent": "next", "weight": null, "reps": null, "days": null, "effort": null}
 "what workout should I do" -> {"intent": "overview", "weight": null, "reps": null, "days": null, "effort": null}
 "how am I meant to do this" -> {"intent": "form", "weight": null, "reps": null, "days": null, "effort": null}
 "any tips for this one" -> {"intent": "form", "weight": null, "reps": null, "days": null, "effort": null}
+"what do I put on each side" -> {"intent": "plates", "weight": null, "reps": null, "days": null, "effort": null}
 "how's my workout going" -> {"intent": "summary", "weight": null, "reps": null, "days": null, "effort": null}
 "I can train three days a week" -> {"intent": "overview", "weight": null, "reps": null, "days": 3, "effort": null}
 "no that's wrong, it was 60 kilos 8 reps" -> {"intent": "undo", "weight": 60, "reps": 8, "days": null, "effort": null}

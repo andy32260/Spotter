@@ -102,6 +102,12 @@ def test_effort_on_a_set():
     check("that was way too easy", "effort", effort="easy")   # coach treats it as a set
 
 
+def test_plates():
+    check("what do I load", "plates")
+    check("how do I load this", "plates")       # not "form", despite "how do i"
+    check("what goes on the bar", "plates")
+
+
 def test_skip():
     check("skip warm-up", "skip")
     check("skip", "skip")
