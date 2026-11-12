@@ -330,6 +330,35 @@ def test_warm_up_is_not_a_set():
     assert details == ["Bench Press: 1 set, best 30 kg x 10 (warm-up: right)"]
 
 
+def test_easy_set_goes_up():
+    s = upper_day()                                   # Bench Press, target 10
+    reply = s.handle("set_done", weight=40, reps=10, effort="easy")
+    assert s.current()["weight"] == 42.5
+    assert "Felt easy, so going up to 42.5 kilos." in reply
+
+
+def test_hard_set_stays():
+    s = upper_day()
+    reply = s.handle("set_done", weight=40, reps=10, effort="hard")
+    assert s.current()["weight"] == 40
+    assert "Felt hard, so staying at 40 kilos." in reply
+
+
+def test_effort_only_set():
+    s = upper_day()
+    s.handle("set_done", effort="easy")               # "that was way too easy"
+    assert s.current()["weight"] == 42.5
+    assert s.log == [{"exercise": "Bench Press", "set": 1, "weight": 40,
+                      "reps": 10, "note": "effort: easy"}]
+
+
+def test_no_nudge_when_target_missed():
+    s = upper_day()
+    reply = s.handle("set_done", weight=40, reps=7, effort="easy")
+    assert s.current()["weight"] == next_weight(40, 7, 10)   # the normal Epley drop
+    assert "Felt" not in reply
+
+
 if __name__ == "__main__":
     tests = [f for name, f in list(globals().items()) if name.startswith("test_")]
     for test in tests:

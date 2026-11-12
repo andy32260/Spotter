@@ -221,16 +221,19 @@ class Session:
             return self.form()
         if intent == "next":
             return self.next_up()
-        if intent == "set_done":
-            return self.set_done(weight, reps)
+        if intent in ("set_done", "effort"):   # "way too easy" is a set report too
+            return self.set_done(weight, reps, effort)
         if intent == "pain":
             return self.pain()
         if intent == "equipment_taken":
             return self.equipment_taken()
         return "Sorry, I didn't catch that. Try: 'got 8 reps at 60 kilos'."
 
-    def set_done(self, weight, reps):
+    def set_done(self, weight, reps, effort=None):
         ex = self.current()
+        effort_only = reps is None and effort is not None
+        if effort_only:             # "that was way too easy": assume the target reps
+            reps = ex["reps"]
         if reps is None:
             return "How many reps did you get?"
         # Plausibility check: a mishearing must never end up in the log.
@@ -244,15 +247,29 @@ class Session:
 
         # Save the state before changing anything, so "undo" can restore it.
         self.snapshot = self.save_state()
-        new_weight = next_weight(weight, reps, ex["reps"])
-        self.log.append({"exercise": ex["name"], "set": self.set_number,
-                         "weight": weight, "reps": reps})
+        # Epley sets the next weight; with no reps said, keep the same weight.
+        new_weight = weight if effort_only else next_weight(weight, reps, ex["reps"])
+        # Effort only nudges it, and only when the target reps were hit.
+        nudge = ""
+        if reps >= ex["reps"] and effort == "easy":
+            new_weight += 2.5
+            nudge = f"Felt easy, so going up to {new_weight:g} kilos. "
+        elif reps >= ex["reps"] and effort == "hard":
+            new_weight = weight
+            nudge = f"Felt hard, so staying at {weight:g} kilos. "
+
+        entry = {"exercise": ex["name"], "set": self.set_number,
+                 "weight": weight, "reps": reps}
+        if effort_only:
+            entry["note"] = f"effort: {effort}"
+        self.log.append(entry)
         ex["weight"] = new_weight
         ex["calibrated"] = True     # a working set was done: no warm-up needed now
 
         # Repeat back what we heard, so mishearings in a noisy gym get caught.
         reply = f"Logged {weight:g} kilos for {reps}. "
         if self.set_number < ex["sets"]:
+            reply += nudge          # only worth saying if there's another set of this
             self.set_number += 1
         else:
             self.move_to_next_exercise()

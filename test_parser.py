@@ -97,6 +97,11 @@ def test_effort():
     check("I took a look", "unknown")                # "ok" only as a whole word
 
 
+def test_effort_on_a_set():
+    check("brutal, but got all ten", "set_done", reps=10, effort="hard")
+    check("that was way too easy", "effort", effort="easy")   # coach treats it as a set
+
+
 def test_skip():
     check("skip warm-up", "skip")
     check("skip", "skip")

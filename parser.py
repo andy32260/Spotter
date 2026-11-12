@@ -53,6 +53,7 @@ Return JSON with "intent", "weight" (kg), "reps", "days" (days a week) and
 "effort" (how a warm-up felt: "easy", "right", "hard" or null).
 intent is one of: next, set_done, pain, equipment_taken, undo, overview, form, summary, skip, effort, unknown.
 Use effort when the user says how the warm-up felt, and skip when they want to skip the warm-up.
+A set report can say how it felt too: put that in "effort" (reps may be null).
 Use form when the user asks how to do the exercise or for technique tips.
 Use summary when the user asks how their workout is going or for a recap.
 Use overview when the user asks what workout or exercises they should do,
@@ -73,6 +74,8 @@ Examples:
 "how's my workout going" -> {"intent": "summary", "weight": null, "reps": null, "days": null, "effort": null}
 "I can train three days a week" -> {"intent": "overview", "weight": null, "reps": null, "days": 3, "effort": null}
 "no that's wrong, it was 60 kilos 8 reps" -> {"intent": "undo", "weight": 60, "reps": 8, "days": null, "effort": null}
+"brutal, but got all ten" -> {"intent": "set_done", "weight": null, "reps": 10, "days": null, "effort": "hard"}
+"that was way too easy" -> {"intent": "set_done", "weight": null, "reps": null, "days": null, "effort": "easy"}
 "felt like nothing" -> {"intent": "effort", "weight": null, "reps": null, "days": null, "effort": "easy"}
 "yeah that was alright" -> {"intent": "effort", "weight": null, "reps": null, "days": null, "effort": "right"}
 "that was a struggle" -> {"intent": "effort", "weight": null, "reps": null, "days": null, "effort": "hard"}"""
