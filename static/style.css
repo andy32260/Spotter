@@ -124,6 +124,34 @@ p { margin: 0; }
   color: var(--accent);
 }
 
+/* Rest timer */
+.rest {
+  margin-top: 12px;
+  font-size: 2.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;   /* digits don't jump as they change */
+}
+
+.rest-done:not(:empty) {
+  margin-top: 12px;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+/* With the voice off, "Time's up" must be impossible to miss on screen. */
+.rest-done.alert {
+  padding: 12px;
+  border: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--on-accent);
+  animation: pulse 1s ease-in-out 3;
+}
+
+@keyframes pulse {
+  50% { transform: scale(1.03); }
+}
+
 .hint-chip {
   align-self: flex-start;
   padding: 8px 14px;

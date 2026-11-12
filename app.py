@@ -37,7 +37,8 @@ def turn():
     print(f"[turn] heard {text!r} -> {heard}", flush=True)  # for debugging
     reply = session.handle(heard["intent"], heard["weight"], heard["reps"],
                            heard["days"])
-    return jsonify(heard=heard, reply=reply, **state())
+    return jsonify(heard=heard, reply=reply, rest_seconds=session.rest_seconds,
+                   **state())
 
 
 @app.post("/api/reset")

@@ -87,13 +87,56 @@ async function sendText(text, fromHandsFree = false) {
     $("heard").textContent = "Ignored: " + text;
     return;
   }
+  cancelRest();                                  // any real turn stops the timer
+  if (data.rest_seconds > 0) startRest(data.rest_seconds);
   $("source").textContent = data.heard.source === "ai" ? "AI (Groq)" : "Regex rules";
   $("reply").textContent = data.reply;
   showState(data);
   speak(data.reply);
 }
 
+// ---------- Rest timer ----------
+// Counts down after a logged set. The coach speaks at 10 seconds left and at
+// 0, through speak(), so the mic still pauses while it talks.
+let restTimer = null;
+let currentText = "";   // the coach's last description of the current set
+
+function startRest(seconds) {
+  let left = seconds;
+  showRest(left);
+  restTimer = setInterval(() => {
+    left -= 1;
+    if (left === 10) speak("Ten seconds.");
+    if (left > 0) return showRest(left);
+    stopRest();
+    const message = "Time's up, go again. " + currentText;
+    $("rest-done").textContent = message;            // announced once (aria-live)
+    $("rest-done").classList.toggle("alert", !voiceOn()); // highlight if not spoken
+    speak(message);
+  }, 1000);
+}
+
+function showRest(left) {
+  const seconds = String(left % 60).padStart(2, "0");
+  $("rest").textContent = `Rest: ${Math.floor(left / 60)}:${seconds}`;
+  $("rest").hidden = false;
+}
+
+function stopRest() {
+  clearInterval(restTimer);
+  restTimer = null;
+  $("rest").hidden = true;
+}
+
+// Stop the countdown and clear any "Time's up" message.
+function cancelRest() {
+  stopRest();
+  $("rest-done").textContent = "";
+  $("rest-done").classList.remove("alert");
+}
+
 function showState(data) {
+  currentText = data.current;
   // The coach describes the set as one sentence ("Bench Press, set 1 of 3:
   // 40 kilos for 10 reps."). Show its parts as separate figures; any other
   // sentence ("No routine yet.", "That's the workout done...") is shown as it is.
@@ -317,6 +360,7 @@ $("text-form").addEventListener("submit", (event) => {
 // New session: clears the routine, so the coach asks for days a week again.
 $("reset").addEventListener("click", async () => {
   const data = await (await fetch("/api/reset", { method: "POST" })).json();
+  cancelRest();
   $("heard").textContent = "...";
   $("source").textContent = "...";
   $("reply").textContent = "...";

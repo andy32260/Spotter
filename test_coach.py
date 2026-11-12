@@ -1,5 +1,5 @@
 """Sanity tests for coach.py. Run: python test_coach.py"""
-from coach import ROUTINES, next_weight, round_down, Session
+from coach import ROUTINES, next_weight, round_down, spoken_duration, Session
 
 
 def upper_day():
@@ -154,6 +154,46 @@ def test_full_body_workout_can_be_completed():
     assert reply.endswith("That's the workout done. Nice work.")
     assert [entry["exercise"] for entry in s.log] == (
         ["Squat"] * 3 + ["Bench Press"] * 3 + ["Seated Cable Row"] * 3)
+
+
+def test_rest_after_a_set():
+    s = upper_day()
+    reply = s.handle("set_done", reps=10)               # Bench Press: compound
+    assert s.rest_seconds == 150 and reply.endswith("Rest 2 minutes 30 seconds.")
+
+    s.handle("pain")                                    # pain never starts a rest
+    assert s.rest_seconds == 0
+
+
+def test_rest_for_bicep_curl():
+    s = upper_day()
+    for _ in range(6):                                  # Bench Press and Cable Row
+        s.handle("set_done", reps=10)
+    assert s.current()["name"] == "Bicep Curl"
+    reply = s.handle("set_done", reps=10)
+    assert s.rest_seconds == 90 and reply.endswith("Rest 1 minute 30 seconds.")
+
+
+def test_spoken_duration():
+    assert spoken_duration(150) == "2 minutes 30 seconds"
+    assert spoken_duration(90) == "1 minute 30 seconds"
+    assert spoken_duration(120) == "2 minutes"
+    assert spoken_duration(45) == "45 seconds"
+
+
+def test_no_rest_after_the_final_set():
+    s = Session()
+    s.handle("overview", days=1)
+    for _ in range(9):
+        reply = s.handle("set_done", reps=10)
+    assert s.rest_seconds == 0 and "Rest" not in reply
+
+
+def test_undo_with_numbers_starts_no_rest():
+    s = upper_day()
+    s.handle("set_done", reps=8)
+    reply = s.handle("undo", weight=40, reps=10)
+    assert s.rest_seconds == 0 and "Rest" not in reply
 
 
 if __name__ == "__main__":
