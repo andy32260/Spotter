@@ -105,6 +105,12 @@ FORM_CUES = {
 }
 
 ASK_DAYS = "How many days a week will you be training?"
+ASK_EFFORT = "How did it feel: easy, about right or hard?"
+
+
+def warm_up_weight(planned):
+    """Half the planned weight, rounded down to 2.5 kg, and never below 2.5 kg."""
+    return max(2.5, round_down(planned / 2))
 
 
 def plural(count, word):
@@ -175,7 +181,7 @@ class Session:
         self.set_number = 1
 
     # One function per intent. handle() picks which one to run.
-    def handle(self, intent, weight=None, reps=None, days=None):
+    def handle(self, intent, weight=None, reps=None, days=None, effort=None):
         self.rest_seconds = 0   # only a successfully logged set starts a rest
         self.details = None
         # Safety first: pain is handled in every state, even during setup.
@@ -187,6 +193,7 @@ class Session:
             if self.current() is None:
                 return ("That's the workout done. If something hurts, rest and "
                         "get it checked if it doesn't settle.")
+            self.awaiting = None        # stops any warm-up question too
             return self.pain()
         # "unknown" may just be background talk, so it never changes anything.
         # While waiting for "how many days a week?", any other number is the answer.
@@ -199,6 +206,9 @@ class Session:
             if self.awaiting == "days":
                 return "Sorry, I need a number from 1 to 7. " + ASK_DAYS
             return "Say 'what workout should I do?' to set up your routine."
+        # Waiting for "how did the warm-up feel?": only that answer (or undo) counts.
+        if self.awaiting == "effort" and intent != "undo":
+            return self.calibrate(intent, effort)
         if intent == "undo":    # before the "done" check, so the last set can be undone
             return self.undo(weight, reps)
         if intent == "summary":     # also works after the workout is finished
@@ -210,7 +220,7 @@ class Session:
         if intent == "form":
             return self.form()
         if intent == "next":
-            return self.describe_current()
+            return self.next_up()
         if intent == "set_done":
             return self.set_done(weight, reps)
         if intent == "pain":
@@ -233,12 +243,12 @@ class Session:
             weight = ex["weight"]   # assume they used the planned weight
 
         # Save the state before changing anything, so "undo" can restore it.
-        self.snapshot = (copy.deepcopy(self.plan), self.index,
-                         self.set_number, len(self.log))
+        self.snapshot = self.save_state()
         new_weight = next_weight(weight, reps, ex["reps"])
         self.log.append({"exercise": ex["name"], "set": self.set_number,
                          "weight": weight, "reps": reps})
         ex["weight"] = new_weight
+        ex["calibrated"] = True     # a working set was done: no warm-up needed now
 
         # Repeat back what we heard, so mishearings in a noisy gym get caught.
         reply = f"Logged {weight:g} kilos for {reps}. "
@@ -289,7 +299,7 @@ class Session:
         self.awaiting = None
         self.routine = ROUTINES[days]
         self.today = self.routine[0]    # today is day 1 of the week
-        self.plan = [dict(ex) for ex in TEMPLATES[self.today]]
+        self.plan = [dict(ex, calibrated=False) for ex in TEMPLATES[self.today]]
         return (note + f"{days} days a week: {and_list(self.routine)}. "
                 f"Today is {self.today}: {self.todays_exercises()}. "
                 "Say 'what's first' when you're ready.")
@@ -350,12 +360,49 @@ class Session:
         name = self.current()["name"]
         return f"{name}: {FORM_CUES[name]} If anything feels sharp or painful, stop."
 
+    # ---------- Warm-up (finds the right working weight) ----------
+
+    def next_up(self):
+        """'What's next?' An exercise not yet calibrated starts with a warm-up."""
+        ex = self.current()
+        if ex["calibrated"]:
+            return self.describe_current()
+        self.awaiting = "effort"
+        return (f"{ex['name']}: first a light warm-up. Do 10 reps with "
+                f"{warm_up_weight(ex['weight']):g} kilos and tell me how it felt: "
+                "easy, about right or hard.")
+
+    def calibrate(self, intent, effort):
+        """Set the working weight from how the warm-up felt."""
+        ex = self.current()
+        planned = ex["weight"]
+        if intent == "skip":
+            ex["calibrated"], self.awaiting = True, None
+            return f"Got it. Working sets at {planned:g} kilos. " + self.describe_current()
+        if effort is None:
+            return ASK_EFFORT
+        self.snapshot = self.save_state()           # so "undo" can take it back
+        weight = {"easy": planned,                  # it was easy: the plan is fine
+                  "right": round_down(planned * 0.75),
+                  "hard": warm_up_weight(planned)}[effort]
+        ex["weight"], ex["calibrated"] = weight, True
+        self.log.append({"exercise": ex["name"], "note": f"warm-up: {effort}"})
+        self.awaiting = None
+        return f"Got it. Working sets at {weight:g} kilos. " + self.describe_current()
+
+    def save_state(self):
+        """Everything "undo" needs to put back."""
+        return (copy.deepcopy(self.plan), self.index, self.set_number,
+                len(self.log), self.awaiting)
+
     def undo(self, weight, reps):
         if self.snapshot is None:
             return "There's nothing to undo."
-        self.plan, self.index, self.set_number, log_length = self.snapshot
+        self.plan, self.index, self.set_number, log_length, self.awaiting = self.snapshot
         self.snapshot = None              # one undo per set: a second undo has nothing left
         del self.log[log_length:]         # remove entries added since the snapshot
+        if self.awaiting == "effort":     # undid a warm-up: ask about it again
+            return "Undone. " + ASK_EFFORT
         if reps is not None:              # "no, it was 60 for 8": log the fix
             reply = self.set_done(weight, reps)
             if self.rest_seconds:         # a correction never starts a rest

@@ -7,9 +7,9 @@ from parser import parse
 os.environ.pop("GROQ_API_KEY", None)
 
 
-def check(text, intent, weight=None, reps=None, days=None):
+def check(text, intent, weight=None, reps=None, days=None, effort=None):
     expected = {"intent": intent, "weight": weight, "reps": reps, "days": days,
-                "source": "regex"}
+                "effort": effort, "source": "regex"}
     result = parse(text)
     assert result == expected, f"{text!r}: expected {expected}, got {result}"
 
@@ -63,7 +63,7 @@ def test_undo():
 
 def test_undo_keeps_corrected_numbers():
     result = parser.parse_regex("scratch that it was 60 kilos for 8 reps")
-    assert result == {"intent": "undo", "weight": 60.0, "reps": 8, "days": None}
+    assert result == {"intent": "undo", "weight": 60.0, "reps": 8, "days": None, "effort": None}
 
 
 def test_overview():
@@ -89,6 +89,23 @@ def test_summary():
     assert parser.parse_regex("give me a recap")["intent"] == "summary"
 
 
+def test_effort():
+    check("felt like nothing", "effort", effort="easy")
+    check("yeah that was alright", "effort", effort="right")
+    check("that was a struggle", "effort", effort="hard")
+    check("ok but heavy", "effort", effort="hard")   # mixed: the safer answer wins
+    check("I took a look", "unknown")                # "ok" only as a whole word
+
+
+def test_skip():
+    check("skip warm-up", "skip")
+    check("skip", "skip")
+
+
+def test_pain_wins_over_effort():
+    check("that was easy but my wrist hurts", "pain")
+
+
 def test_pain_wins_over_undo():
     check("that was wrong it hurt", "pain")
 
@@ -106,34 +123,35 @@ def test_pain_wins_even_with_a_key():
         raise AssertionError("The AI was called for a pain sentence")
 
     result = parse_with_fake_llm("my knee hurts, got 8", ai_must_not_be_called)
-    assert result == {"intent": "pain", "weight": None, "reps": None, "days": None,
+    assert result == {"intent": "pain", "weight": None, "reps": None, "days": None, "effort": None,
                       "source": "regex"}
 
 
 def test_ai_answer_is_used():
     def fake(text):
-        return {"intent": "set_done", "weight": 60, "reps": 8, "days": None}
+        return {"intent": "set_done", "weight": 60, "reps": 8, "days": None, "effort": None}
 
     result = parse_with_fake_llm("did 60 for eight", fake)
-    assert result == {"intent": "set_done", "weight": 60.0, "reps": 8, "days": None,
+    assert result == {"intent": "set_done", "weight": 60.0, "reps": 8, "days": None, "effort": None,
                       "source": "ai"}
 
 
 def test_numbers_the_user_never_said_are_dropped():
     def fake(text):    # the AI invents "6 days" for a question with no number
-        return {"intent": "overview", "weight": None, "reps": None, "days": 6}
+        return {"intent": "overview", "weight": None, "reps": None, "days": 6,
+                "effort": None}
 
     result = parse_with_fake_llm("what workout should I do", fake)
     assert result == {"intent": "overview", "weight": None, "reps": None,
-                      "days": None, "source": "ai"}
+                      "days": None, "effort": None, "source": "ai"}
 
 
 def test_invalid_ai_answer_falls_back_to_regex():
     def fake(text):
-        return {"intent": "dance", "weight": "heavy", "reps": None, "days": None}
+        return {"intent": "dance", "weight": "heavy", "reps": None, "days": None, "effort": None}
 
     result = parse_with_fake_llm("60 for 8", fake)
-    assert result == {"intent": "set_done", "weight": 60.0, "reps": 8, "days": None,
+    assert result == {"intent": "set_done", "weight": 60.0, "reps": 8, "days": None, "effort": None,
                       "source": "regex"}
 
 

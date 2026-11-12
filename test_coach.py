@@ -149,7 +149,8 @@ def test_full_body_workout_can_be_completed():
     s = Session()
     s.handle("overview")
     s.handle("overview", days=1)
-    assert s.handle("next").startswith("Squat, set 1 of 3")
+    assert "first a light warm-up" in s.handle("next")
+    assert s.handle("skip").endswith("Squat, set 1 of 3: 40 kilos for 10 reps.")
     for _ in range(9):                           # 3 exercises x 3 sets
         reply = s.handle("set_done", reps=10)
     assert reply == ("Workout done. You logged 9 sets across 3 exercises. "
@@ -262,6 +263,71 @@ def upper_day_of(days):
     s = Session()
     s.handle("overview", days=days)
     return s
+
+
+def warmed_up(effort):
+    """Upper day, warm-up done on Bench Press (planned 40 kg) with this effort."""
+    s = upper_day()
+    s.handle("next")
+    s.handle("effort", effort=effort)
+    return s
+
+
+def test_warm_up_prompt():
+    s = upper_day()
+    reply = s.handle("next")
+    assert reply == ("Bench Press: first a light warm-up. Do 10 reps with 20 kilos "
+                     "and tell me how it felt: easy, about right or hard.")
+    assert s.awaiting == "effort"
+
+
+def test_warm_up_sets_the_working_weight():
+    for effort, weight in [("easy", 40), ("right", 30), ("hard", 20)]:
+        s = warmed_up(effort)
+        assert s.current()["weight"] == weight, effort
+        assert s.awaiting is None and s.rest_seconds == 0
+        assert s.log == [{"exercise": "Bench Press", "note": f"warm-up: {effort}"}]
+
+
+def test_warm_up_reply_and_asking_again():
+    s = upper_day()
+    s.handle("next")
+    assert s.handle("set_done", reps=10) == "How did it feel: easy, about right or hard?"
+    assert s.handle("effort", effort="right") == (
+        "Got it. Working sets at 30 kilos. Bench Press, set 1 of 3: 30 kilos for 10 reps.")
+    assert s.handle("next") == "Bench Press, set 1 of 3: 30 kilos for 10 reps."  # no second warm-up
+
+
+def test_skip_warm_up():
+    s = upper_day()
+    s.handle("next")
+    s.handle("skip")
+    assert s.current()["weight"] == 40 and s.current()["calibrated"]
+    assert s.log == [] and s.awaiting is None
+
+
+def test_pain_during_warm_up():
+    s = upper_day()
+    s.handle("next")
+    s.handle("pain")
+    assert s.current()["name"] == "Seated Cable Row" and s.awaiting is None
+    assert s.log == [{"exercise": "Bench Press", "set": 1, "note": "stopped: pain"}]
+
+
+def test_undo_a_warm_up():
+    s = warmed_up("hard")
+    assert s.handle("undo") == "Undone. How did it feel: easy, about right or hard?"
+    assert s.log == [] and s.awaiting == "effort" and s.current()["weight"] == 40
+    s.handle("effort", effort="easy")
+    assert s.current()["weight"] == 40
+
+
+def test_warm_up_is_not_a_set():
+    s = warmed_up("right")
+    s.handle("set_done", reps=10)
+    assert s.handle("summary").startswith("So far: 1 set across 1 exercise.")
+    _, details = s.summary()
+    assert details == ["Bench Press: 1 set, best 30 kg x 10 (warm-up: right)"]
 
 
 if __name__ == "__main__":

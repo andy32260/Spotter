@@ -36,7 +36,7 @@ def turn():
     heard = parse(text)
     print(f"[turn] heard {text!r} -> {heard}", flush=True)  # for debugging
     reply = session.handle(heard["intent"], heard["weight"], heard["reps"],
-                           heard["days"])
+                           heard["days"], heard["effort"])
     return jsonify(heard=heard, reply=reply, rest_seconds=session.rest_seconds,
                    summary=session.details, **state())
 
