@@ -1,0 +1,108 @@
+/* High contrast, big text: readable from arm's length in a gym. */
+body {
+  margin: 0;
+  background: #000;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 1.4rem;
+  line-height: 1.4;
+}
+
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 2.6rem;
+  color: #ffd400;
+  margin: 0 0 1rem;
+}
+
+.label {
+  color: #bbb;
+  font-weight: bold;
+}
+
+button {
+  font-size: 1.4rem;
+  font-weight: bold;
+  min-height: 3.5rem;
+  padding: 0 1.5rem;
+  border: 3px solid #fff;
+  border-radius: 0.5rem;
+  background: #ffd400;
+  color: #000;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #555;
+  color: #ccc;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 4px solid #4fc3ff;
+  outline-offset: 2px;
+}
+
+.talk {
+  width: 100%;
+  min-height: 7rem;
+  font-size: 2.2rem;
+}
+
+.secondary {
+  background: #000;
+  color: #fff;
+  margin-top: 1.5rem;
+}
+
+.secondary[aria-pressed="true"] {
+  background: #ffd400;
+  color: #000;
+}
+
+.status {
+  font-weight: bold;
+  color: #4fc3ff;
+}
+
+.warning {
+  color: #ff6b6b;
+  font-weight: bold;
+}
+
+.conversation {
+  margin: 1rem 0;
+}
+
+form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+input {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.4rem;
+  padding: 0.5rem;
+  border: 3px solid #fff;
+  border-radius: 0.5rem;
+  background: #111;
+  color: #fff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 2px solid #fff;
+  padding: 0.4rem;
+  text-align: left;
+}
